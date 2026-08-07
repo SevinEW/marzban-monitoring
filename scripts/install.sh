@@ -45,7 +45,8 @@ EOF
 }
 
 is_installed() {
-  [[ -e "$BIN" || -e "$CTL" || -e /etc/marzwatch || -e /var/lib/marzwatch || -e "$UNIT" ]] || systemctl list-unit-files marzwatch.service >/dev/null 2>&1
+  [[ -e "$BIN" || -e "$CTL" || -e /etc/marzwatch || -e /var/lib/marzwatch || -e "$UNIT" ]] && return 0
+  systemctl cat marzwatch.service >/dev/null 2>&1
 }
 
 backup_existing() {
@@ -94,7 +95,7 @@ rollback() {
 }
 trap rollback EXIT
 
-[[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "In installer bayad ba root اجرا beshe."; exit 1; }
+[[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "In installer bayad ba root ejra beshe."; exit 1; }
 
 banner
 printf "%b╭────────────────────────────────────╮%b\n" "$B" "$N"

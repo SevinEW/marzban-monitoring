@@ -11,6 +11,7 @@ Lightweight, fail-safe monitoring for Marzban/Xray node fleets with Telegram rep
 - TLS certificate fingerprint is pinned inside the Join Key.
 - HMAC-signed node metrics.
 - Central and agent are systemd resource-limited.
+- State snapshots are bounded and flushed at a low frequency to reduce disk writes.
 
 ## Install UX
 ```bash

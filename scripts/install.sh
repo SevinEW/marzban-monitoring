@@ -107,6 +107,8 @@ cat > "$UNIT" <<'UNIT'
 Description=MarzWatch Lightweight Infrastructure Monitor
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -115,8 +117,6 @@ Group=marzwatch
 ExecStart=/usr/local/bin/marzwatch run
 Restart=on-failure
 RestartSec=7s
-StartLimitIntervalSec=60
-StartLimitBurst=5
 Nice=10
 CPUQuota=20%
 MemoryMax=128M

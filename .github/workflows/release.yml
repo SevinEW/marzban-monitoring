@@ -1,0 +1,49 @@
+name: build-latest
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marzwatch-latest-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Test
+        run: |
+          go test ./...
+          go vet ./...
+
+      - name: Build Linux binaries
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/marzwatch-linux-amd64 ./cmd/marzwatch
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/marzwatch-linux-arm64 ./cmd/marzwatch
+          (cd dist && sha256sum marzwatch-linux-amd64 marzwatch-linux-arm64 > SHA256SUMS)
+
+      - name: Replace latest release safely
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag -y >/dev/null 2>&1 || true
+          gh release create latest \
+            dist/marzwatch-linux-amd64 \
+            dist/marzwatch-linux-arm64 \
+            dist/SHA256SUMS \
+            --title 'MarzWatch Latest' \
+            --notes 'Automated tested build from main.' \
+            --latest \
+            --target "${GITHUB_SHA}"

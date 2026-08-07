@@ -22,6 +22,11 @@ jobs:
         with:
           go-version: '1.23.x'
 
+      - name: Apply final HUD templates
+        run: |
+          python3 scripts/apply_hud_v2.py
+          gofmt -w internal/central/server.go
+
       - name: Test
         run: |
           go test ./...
@@ -44,6 +49,6 @@ jobs:
             dist/marzwatch-linux-arm64 \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Automated tested build from main.' \
+            --notes 'Automated tested build with final HUD/Cyber Telegram templates.' \
             --latest \
             --target "${GITHUB_SHA}"

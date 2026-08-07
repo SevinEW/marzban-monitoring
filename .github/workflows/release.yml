@@ -25,12 +25,14 @@ jobs:
       - name: Apply final HUD templates
         run: |
           python3 scripts/apply_hud_v2.py
+          python3 scripts/apply_hud_v3.py
           gofmt -w internal/central/server.go
 
       - name: Test
         run: |
           go test ./...
           go vet ./...
+          bash -n scripts/install.sh
 
       - name: Build Linux binaries
         run: |
@@ -49,6 +51,6 @@ jobs:
             dist/marzwatch-linux-arm64 \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Automated tested build with final HUD/Cyber Telegram templates.' \
+            --notes 'Automated tested build with Card HUD v3, MW2 node tokens, and redesigned installer.' \
             --latest \
             --target "${GITHUB_SHA}"

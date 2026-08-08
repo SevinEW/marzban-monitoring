@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,8 @@ import (
 )
 
 const identityPath = "/var/lib/marzwatch/identity.json"
+const updateRequestPath = "/var/lib/marzwatch/update.request"
+const updateSeenPath = "/var/lib/marzwatch/update.seen"
 
 var errIdentityRejected = errors.New("central rejected node identity")
 
@@ -194,7 +197,34 @@ func (a *Agent) sendMetric(m model.Metric) error {
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("central returned %s", resp.Status)
 	}
+	a.handleFleetUpdate(resp.Header.Get("X-Marzwatch-Fleet-Update"))
 	return nil
+}
+
+func (a *Agent) handleFleetUpdate(v string) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return
+	}
+	ts, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || ts <= 0 {
+		return
+	}
+	seen := int64(0)
+	if b, err := os.ReadFile(updateSeenPath); err == nil {
+		seen, _ = strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	}
+	if ts <= seen {
+		return
+	}
+	if err := os.WriteFile(updateRequestPath, []byte(fmt.Sprintf("%d\n", ts)), 0600); err != nil {
+		log.Printf("fleet update request write failed: %v", err)
+		return
+	}
+	if err := os.WriteFile(updateSeenPath, []byte(fmt.Sprintf("%d\n", ts)), 0600); err != nil {
+		log.Printf("fleet update marker write failed: %v", err)
+	}
+	log.Printf("fleet update requested by central")
 }
 
 func (a *Agent) resetIdentity() error {

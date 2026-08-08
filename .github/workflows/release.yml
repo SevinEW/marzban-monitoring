@@ -22,10 +22,11 @@ jobs:
         with:
           go-version: '1.23.x'
 
-      - name: Apply final HUD templates
+      - name: Apply final build transforms
         run: |
           python3 scripts/apply_hud_v2.py
           python3 scripts/apply_hud_v3.py
+          python3 scripts/apply_fleet_update.py
           gofmt -w internal/central/server.go
 
       - name: Test
@@ -33,13 +34,16 @@ jobs:
           go test ./...
           go vet ./...
           bash -n scripts/install.sh
+          bash -n scripts/auto-update.sh
 
       - name: Build Linux binaries
         run: |
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/marzwatch-linux-amd64 ./cmd/marzwatch
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/marzwatch-linux-arm64 ./cmd/marzwatch
-          (cd dist && sha256sum marzwatch-linux-amd64 marzwatch-linux-arm64 > SHA256SUMS)
+          cp scripts/auto-update.sh dist/marzwatch-auto-update.sh
+          chmod 0755 dist/marzwatch-auto-update.sh
+          (cd dist && sha256sum marzwatch-linux-amd64 marzwatch-linux-arm64 marzwatch-auto-update.sh > SHA256SUMS)
 
       - name: Replace latest release safely
         env:
@@ -49,8 +53,9 @@ jobs:
           gh release create latest \
             dist/marzwatch-linux-amd64 \
             dist/marzwatch-linux-arm64 \
+            dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Automated tested build with Card HUD v3, MW2 node tokens, and redesigned installer.' \
+            --notes 'Tested MarzWatch build with hourly reports, MW2 tokens, safe self-heal, automatic rollback updates, and fleet auto-update.' \
             --latest \
             --target "${GITHUB_SHA}"

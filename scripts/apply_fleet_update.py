@@ -21,3 +21,11 @@ if '"os"\n' not in s:
     s = s.replace('"net/http"\n', '"net/http"\n\t"os"\n', 1)
 
 p.write_text(s)
+
+# fleet-update is invoked by the root-only updater, but Central itself runs as
+# the dedicated marzwatch user. The timestamp contains no secret, so make it
+# world-readable while keeping the state directory itself protected.
+main = Path("cmd/marzwatch/main.go")
+m = main.read_text()
+m = m.replace('os.WriteFile(tmp, []byte(payload), 0640)', 'os.WriteFile(tmp, []byte(payload), 0644)')
+main.write_text(m)

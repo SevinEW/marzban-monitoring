@@ -14,6 +14,7 @@ UNIT="/etc/systemd/system/marzwatch.service"
 UPDATE_SERVICE="/etc/systemd/system/marzwatch-auto-update.service"
 UPDATE_TIMER="/etc/systemd/system/marzwatch-auto-update.timer"
 STAMP_DIR="/var/lib/marzwatch-updater"
+BACKUP_DIR="$STAMP_DIR/backups"
 LAST_CHECK="$STAMP_DIR/last-check"
 LOCK_FILE="/run/marzwatch-auto-update.lock"
 CENTRAL_PORT="28443"
@@ -29,8 +30,8 @@ command -v curl >/dev/null || fail "curl missing"
 command -v sha256sum >/dev/null || fail "sha256sum missing"
 command -v systemctl >/dev/null || fail "systemd missing"
 
-mkdir -p "$STAMP_DIR" "$UPDATER_DIR"
-chmod 0700 "$STAMP_DIR" "$UPDATER_DIR"
+mkdir -p "$STAMP_DIR" "$BACKUP_DIR" "$UPDATER_DIR"
+chmod 0700 "$STAMP_DIR" "$BACKUP_DIR" "$UPDATER_DIR"
 
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$LOCK_FILE"
@@ -87,11 +88,17 @@ old_sha="$(sha256sum "$BIN" | awk '{print $1}')"
 new_updater_sha="$(sha256sum "$tmpdir/marzwatch-auto-update.sh" | awk '{print $1}')"
 old_updater_sha="$(sha256sum "$UPDATER" 2>/dev/null | awk '{print $1}' || true)"
 
-backup="/root/marzwatch-auto-update-backup-$(date +%Y%m%d-%H%M%S)"
+backup="$BACKUP_DIR/$(date +%Y%m%d-%H%M%S)"
 mkdir -m 0700 -p "$backup"
 cp -a "$BIN" "$backup/marzwatch.binary"
 [[ -f "$UNIT" ]] && cp -a "$UNIT" "$backup/marzwatch.service" || true
 [[ -f "$UPDATER" ]] && cp -a "$UPDATER" "$backup/auto-update.sh" || true
+
+# Retain only the newest five updater backups.
+find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
+  | sort -nr \
+  | awk 'NR>5 {$1=""; sub(/^ /,""); print}' \
+  | while IFS= read -r old; do [[ -n "$old" ]] && rm -rf -- "$old"; done
 
 write_main_unit() {
   cat > "$UNIT.new" <<'UNITEOF'
@@ -150,7 +157,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
-ReadWritePaths=/usr/local/bin /usr/local/lib/marzwatch /etc/systemd/system /var/lib/marzwatch /var/lib/marzwatch-updater /root /run
+ReadWritePaths=/usr/local/bin /usr/local/lib/marzwatch /etc/systemd/system /var/lib/marzwatch /var/lib/marzwatch-updater /run
 EOF
 
   cat > "$UPDATE_TIMER" <<'EOF'

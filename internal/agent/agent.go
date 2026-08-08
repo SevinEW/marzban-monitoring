@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -26,6 +27,8 @@ import (
 )
 
 const identityPath = "/var/lib/marzwatch/identity.json"
+
+var errIdentityRejected = errors.New("central rejected node identity")
 
 type identity struct {
 	NodeID     string `json:"node_id"`
@@ -53,6 +56,7 @@ func Run(cfg config.Config) error {
 	go a.superviseCollector()
 	return a.sendLoop()
 }
+
 func (a *Agent) registerWithRetry() error {
 	delay := 2 * time.Second
 	for {
@@ -70,6 +74,7 @@ func (a *Agent) registerWithRetry() error {
 		}
 	}
 }
+
 func (a *Agent) register() error {
 	host, osName, arch, cores := collector.SystemInfo()
 	loc := geo.Detect()
@@ -97,6 +102,7 @@ func (a *Agent) register() error {
 	a.id = identity{NodeID: rr.NodeID, NodeSecret: rr.NodeSecret}
 	return a.saveIdentity()
 }
+
 func (a *Agent) superviseCollector() {
 	for {
 		func() {
@@ -124,6 +130,7 @@ func (a *Agent) collectLoop() {
 		a.mu.Unlock()
 	}
 }
+
 func (a *Agent) sendLoop() error {
 	time.Sleep(17 * time.Second)
 	delay := time.Minute
@@ -135,6 +142,18 @@ func (a *Agent) sendLoop() error {
 			m, _ = a.col.Collect()
 		}
 		if err := a.sendMetric(m); err != nil {
+			if errors.Is(err, errIdentityRejected) {
+				log.Printf("node identity rejected; starting safe automatic re-registration")
+				if err := a.resetIdentity(); err != nil {
+					log.Printf("identity reset failed: %v", err)
+				} else if err := a.registerWithRetry(); err != nil {
+					log.Printf("automatic re-registration failed: %v", err)
+				} else {
+					log.Printf("automatic re-registration completed")
+					delay = time.Minute
+					continue
+				}
+			}
 			log.Printf("metrics send failed: %v", err)
 			if delay < 5*time.Minute {
 				delay *= 2
@@ -148,6 +167,7 @@ func (a *Agent) sendLoop() error {
 		time.Sleep(delay)
 	}
 }
+
 func (a *Agent) sendMetric(m model.Metric) error {
 	b, _ := json.Marshal(m)
 	ts := fmt.Sprintf("%d", time.Now().Unix())
@@ -168,14 +188,27 @@ func (a *Agent) sendMetric(m model.Metric) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 401 {
-		return fmt.Errorf("authentication rejected; remove %s and rejoin if node was revoked", identityPath)
+	if resp.StatusCode == http.StatusUnauthorized {
+		return errIdentityRejected
 	}
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("central returned %s", resp.Status)
 	}
 	return nil
 }
+
+func (a *Agent) resetIdentity() error {
+	if _, err := os.Stat(identityPath); err == nil {
+		stale := fmt.Sprintf("%s.stale-%d", identityPath, time.Now().Unix())
+		if err := os.Rename(identityPath, stale); err != nil {
+			return err
+		}
+		_ = os.Chmod(stale, 0600)
+	}
+	a.id = identity{}
+	return nil
+}
+
 func (a *Agent) loadIdentity() error {
 	b, e := os.ReadFile(identityPath)
 	if e != nil {
@@ -183,6 +216,7 @@ func (a *Agent) loadIdentity() error {
 	}
 	return json.Unmarshal(b, &a.id)
 }
+
 func (a *Agent) saveIdentity() error {
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0750); err != nil {
 		return err

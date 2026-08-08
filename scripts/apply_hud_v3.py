@@ -3,6 +3,9 @@ from pathlib import Path
 p = Path("internal/central/server.go")
 s = p.read_text()
 
+# Hourly infrastructure reports, aligned to the top of each hour.
+s = s.replace("next := nextBoundary(time.Now(), 10*time.Minute)", "next := nextBoundary(time.Now(), time.Hour)")
+
 start = s.index("func formatGlobal(")
 end = s.index("func formatDaily(")
 

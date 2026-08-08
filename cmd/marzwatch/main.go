@@ -185,13 +185,15 @@ func fleetUpdate() {
 	}
 	payload := fmt.Sprintf("%d\n", time.Now().Unix())
 	tmp := fleetUpdatePath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(payload), 0640); err != nil {
+	if err := os.WriteFile(tmp, []byte(payload), 0644); err != nil {
 		log.Fatal(err)
 	}
 	if err := os.Rename(tmp, fleetUpdatePath); err != nil {
 		log.Fatal(err)
 	}
-	_ = os.Chown(fleetUpdatePath, 0, -1)
+	if err := os.Chmod(fleetUpdatePath, 0644); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println("✅ Fleet update signal faal shod. Node-ha dar metrics cycle update ro request mikonan.")
 }
 

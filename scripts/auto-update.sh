@@ -192,7 +192,7 @@ if [[ "$new_updater_sha" != "$old_updater_sha" ]]; then
 fi
 write_update_units
 systemctl daemon-reload
-systemctl enable marzwatch-auto-update.timer >/dev/null 2>&1 || true
+systemctl enable --now marzwatch-auto-update.timer >/dev/null 2>&1 || true
 
 binary_changed=0
 if [[ "$new_sha" != "$old_sha" ]]; then

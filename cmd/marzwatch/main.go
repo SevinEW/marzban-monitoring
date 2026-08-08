@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/SevinEW/marzban-monitoring/internal/agent"
 	"github.com/SevinEW/marzban-monitoring/internal/central"
@@ -21,6 +22,7 @@ import (
 )
 
 const centralPort = "28443"
+const fleetUpdatePath = "/var/lib/marzwatch/fleet-update.request"
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
@@ -39,6 +41,9 @@ func main() {
 		setupAgent()
 	case "join-key":
 		showJoinKey()
+	case "fleet-update":
+		mustRoot()
+		fleetUpdate()
 	case "doctor":
 		doctor()
 	case "uninstall":
@@ -51,7 +56,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Println("MarzWatch\n\nCommands:\n  run\n  setup-central\n  setup-agent\n  join-key\n  doctor\n  uninstall")
+	fmt.Println("MarzWatch\n\nCommands:\n  run\n  setup-central\n  setup-agent\n  join-key\n  fleet-update\n  doctor\n  uninstall")
 }
 
 func run() {
@@ -165,6 +170,29 @@ func showJoinKey() {
 		log.Fatal(err)
 	}
 	fmt.Printf("MW2@%s@%s@%s\n", c.PublicIP, c.JoinToken, security.Fingerprint(cert.Raw))
+}
+
+func fleetUpdate() {
+	c, err := config.Load("")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if c.Role != "central" {
+		log.Fatal("fleet-update faghat rooye Central kar mikone")
+	}
+	if err := os.MkdirAll(filepath.Dir(fleetUpdatePath), 0750); err != nil {
+		log.Fatal(err)
+	}
+	payload := fmt.Sprintf("%d\n", time.Now().Unix())
+	tmp := fleetUpdatePath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(payload), 0640); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.Rename(tmp, fleetUpdatePath); err != nil {
+		log.Fatal(err)
+	}
+	_ = os.Chown(fleetUpdatePath, 0, -1)
+	fmt.Println("✅ Fleet update signal faal shod. Node-ha dar metrics cycle update ro request mikonan.")
 }
 
 func doctor() {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 const DefaultPath = "/etc/marzwatch/config.json"
@@ -53,12 +54,34 @@ func Save(path string, c Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return err
 	}
+
+	// Preserve ownership of an existing config across the atomic temp-file
+	// replacement. This matters because administrative CLI commands run as root
+	// while the long-running service intentionally runs as the marzwatch user.
+	uid, gid := -1, -1
+	if st, err := os.Stat(path); err == nil {
+		if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+			uid = int(sys.Uid)
+			gid = int(sys.Gid)
+		}
+	}
+
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0640); err != nil {
+		return err
+	}
+	if uid >= 0 && gid >= 0 {
+		if err := os.Chown(tmp, uid, gid); err != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
+	}
+	if err := os.Chmod(tmp, 0640); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path)

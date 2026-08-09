@@ -216,6 +216,15 @@ bot.write_text(s)
 forum = Path("internal/central/forum.go")
 f = forum.read_text()
 
+# The rate-limit handling below calls telegram.IsRateLimit, so ensure the final
+# transformed Go source imports the package explicitly.
+telegram_import = '\t"github.com/SevinEW/marzban-monitoring/internal/telegram"\n'
+if telegram_import not in f:
+    model_import = '\t"github.com/SevinEW/marzban-monitoring/internal/model"\n'
+    if model_import not in f:
+        raise SystemExit("forum model import anchor not found")
+    f = f.replace(model_import, model_import + telegram_import, 1)
+
 old = '''\t} else if overview != st.OverviewLastText {
 \t\tif err := s.bot.EditMessage(s.cfg.TelegramGroupID, st.OverviewMessageID, overview); err != nil {
 \t\t\tmsgID, sendErr := s.bot.SendMessage(s.cfg.TelegramGroupID, st.OverviewTopicID, overview)

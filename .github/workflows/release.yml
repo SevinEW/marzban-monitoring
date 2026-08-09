@@ -30,6 +30,7 @@ jobs:
           python3 scripts/apply_forum_live.py
           python3 scripts/apply_forum_first_install.py
           python3 scripts/apply_live_refresh.py
+          python3 scripts/apply_telegram_rate_limit.py
           gofmt -w cmd internal
 
       - name: Test
@@ -59,6 +60,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Tested MarzWatch build with mandatory Telegram Forum validation during fresh Central setup, 10-second live dashboard refresh, exact per-node last-update timestamps, one topic per server, live Overview, six-hour stale-node/topic cleanup, MW2 tokens, safe self-heal, and fleet auto-update.' \
+            --notes 'Tested MarzWatch build with mandatory Telegram Forum validation during fresh Central setup, 10-second telemetry, flood-safe paced Telegram forum updates with RetryAfter backoff, exact per-node last-update timestamps, total live bandwidth, one topic per server, six-hour stale-node/topic cleanup, MW2 tokens, safe self-heal, and fleet auto-update.' \
             --latest \
             --target "${GITHUB_SHA}"

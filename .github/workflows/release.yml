@@ -28,6 +28,7 @@ jobs:
           python3 scripts/apply_hud_v3.py
           python3 scripts/apply_fleet_update.py
           python3 scripts/apply_forum_live.py
+          python3 scripts/apply_forum_first_install.py
           gofmt -w cmd internal
 
       - name: Test
@@ -57,6 +58,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Tested MarzWatch build with Telegram Forum live dashboards, one topic per server, live Overview, six-hour stale-node/topic cleanup, MW2 tokens, safe self-heal, and fleet auto-update.' \
+            --notes 'Tested MarzWatch build with mandatory Telegram Forum validation during fresh Central setup, live dashboards, one topic per server, live Overview, six-hour stale-node/topic cleanup, MW2 tokens, safe self-heal, and fleet auto-update.' \
             --latest \
             --target "${GITHUB_SHA}"

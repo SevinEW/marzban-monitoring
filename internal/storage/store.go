@@ -52,6 +52,20 @@ func (s *Store) UpsertNode(n model.Node) {
 	s.nodes[n.ID] = &cp
 	s.dirty = true
 }
+
+func (s *Store) RemoveNode(id string) (model.Node, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.nodes[id]
+	if !ok {
+		return model.Node{}, false
+	}
+	cp := cloneNode(*n)
+	delete(s.nodes, id)
+	s.dirty = true
+	return cp, true
+}
+
 func (s *Store) GetNode(id string) (model.Node, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

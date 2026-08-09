@@ -1,13 +1,18 @@
 from pathlib import Path
 
-# Live Telegram forum refresh: 10s. Metrics are sent every 15s so cards stay
-# fresh without creating a high-frequency request storm.
+# Telegram forum checks twice per metric interval so a freshly received sample
+# is reflected quickly. Agents send a new signed metric every 10 seconds.
 forum = Path("internal/central/forum.go")
 f = forum.read_text()
 
 f = f.replace(
     "\tt := time.NewTicker(30 * time.Second)\n",
+    "\tt := time.NewTicker(5 * time.Second)\n",
+    1,
+)
+f = f.replace(
     "\tt := time.NewTicker(10 * time.Second)\n",
+    "\tt := time.NewTicker(5 * time.Second)\n",
     1,
 )
 
@@ -50,20 +55,25 @@ if "func appendNodeLastUpdate(" not in f:
 
 forum.write_text(f)
 
-# Agent samples every 5s and sends one signed metric every 15s in the healthy
+# Agent samples every 5s and sends one signed metric every 10s in the healthy
 # path. Existing exponential backoff still protects Central during failures.
 agent = Path("internal/agent/agent.go")
 a = agent.read_text()
 a = a.replace("time.NewTicker(15 * time.Second)", "time.NewTicker(5 * time.Second)", 1)
-a = a.replace("time.Sleep(17 * time.Second)", "time.Sleep(7 * time.Second)", 1)
-a = a.replace("\tdelay := time.Minute\n", "\tdelay := 15 * time.Second\n", 1)
-a = a.replace("\t\t\t\t\tdelay = time.Minute\n", "\t\t\t\t\tdelay = 15 * time.Second\n", 1)
-a = a.replace("\t\t\tdelay = time.Minute\n", "\t\t\tdelay = 15 * time.Second\n", 1)
+a = a.replace("time.Sleep(17 * time.Second)", "time.Sleep(5 * time.Second)", 1)
+a = a.replace("time.Sleep(7 * time.Second)", "time.Sleep(5 * time.Second)", 1)
+a = a.replace("\tdelay := time.Minute\n", "\tdelay := 10 * time.Second\n", 1)
+a = a.replace("\tdelay := 15 * time.Second\n", "\tdelay := 10 * time.Second\n", 1)
+a = a.replace("\t\t\t\t\tdelay = time.Minute\n", "\t\t\t\t\tdelay = 10 * time.Second\n", 1)
+a = a.replace("\t\t\t\t\tdelay = 15 * time.Second\n", "\t\t\t\t\tdelay = 10 * time.Second\n", 1)
+a = a.replace("\t\t\tdelay = time.Minute\n", "\t\t\tdelay = 10 * time.Second\n", 1)
+a = a.replace("\t\t\tdelay = 15 * time.Second\n", "\t\t\tdelay = 10 * time.Second\n", 1)
 agent.write_text(a)
 
-# Central's local node follows the same 15s reporting cadence.
+# Central's local node follows the same 10s reporting cadence.
 server = Path("internal/central/server.go")
 s = server.read_text()
 s = s.replace("\tticker := time.NewTicker(15 * time.Second)\n", "\tticker := time.NewTicker(5 * time.Second)\n", 1)
-s = s.replace("time.Since(lastSend) >= 55*time.Second", "time.Since(lastSend) >= 15*time.Second", 1)
+s = s.replace("time.Since(lastSend) >= 55*time.Second", "time.Since(lastSend) >= 10*time.Second", 1)
+s = s.replace("time.Since(lastSend) >= 15*time.Second", "time.Since(lastSend) >= 10*time.Second", 1)
 server.write_text(s)

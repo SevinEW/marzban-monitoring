@@ -8,6 +8,7 @@ CTL="/usr/local/bin/marzwatchctl"
 UNIT="/etc/systemd/system/marzwatch.service"
 CONFIG="/etc/marzwatch/config.json"
 STATE_DIR="/var/lib/marzwatch"
+FORUM_STATE="$STATE_DIR/forum.json"
 UPDATER_DIR="/usr/local/lib/marzwatch"
 UPDATER="$UPDATER_DIR/auto-update.sh"
 UPDATE_SERVICE="/etc/systemd/system/marzwatch-auto-update.service"
@@ -199,6 +200,89 @@ ensure_runtime_layout() {
   [[ -x "$BIN" ]] && ln -sfn "$BIN" "$CTL" || true
 }
 
+verify_config_permissions() {
+  local owner mode
+  [[ -f "$CONFIG" ]] || { printf "%b🔴 Config file missing.%b\n" "$R" "$N"; return 1; }
+  owner="$(stat -c '%U:%G' "$CONFIG")"
+  mode="$(stat -c '%a' "$CONFIG")"
+  if [[ "$owner" != "root:marzwatch" || "$mode" != "640" ]]; then
+    printf "%b🔴 Config permission invalid: %s %s%b\n" "$R" "$owner" "$mode" "$N"
+    return 1
+  fi
+  printf "%b✅ Config permission verified • root:marzwatch 640%b\n" "$G" "$N"
+}
+
+verify_central_live() {
+  printf "%b🔎 Verifying Central health + Telegram Live Forum...%b\n" "$C" "$N"
+
+  if ! systemctl is-active --quiet marzwatch; then
+    printf "%b🔴 MarzWatch service is not active.%b\n" "$R" "$N"
+    return 1
+  fi
+  printf "%b✅ Service active%b\n" "$G" "$N"
+
+  verify_config_permissions || return 1
+
+  if ! curl -kfsS --connect-timeout 3 --max-time 7 "https://127.0.0.1:${CENTRAL_PORT}/healthz" >/dev/null; then
+    printf "%b🔴 Central /healthz failed.%b\n" "$R" "$N"
+    return 1
+  fi
+  printf "%b✅ Central HTTPS health verified%b\n" "$G" "$N"
+
+  local ok=0
+  for _ in {1..18}; do
+    if [[ -s "$FORUM_STATE" ]] && python3 - "$FORUM_STATE" <<'PY' >/dev/null 2>&1
+import json, sys
+p=sys.argv[1]
+d=json.load(open(p))
+if int(d.get("overview_topic_id") or 0) <= 0:
+    raise SystemExit(1)
+if int(d.get("overview_message_id") or 0) <= 0:
+    raise SystemExit(1)
+nodes=d.get("nodes") or {}
+central=nodes.get("central")
+if not central:
+    raise SystemExit(1)
+if int(central.get("topic_id") or 0) <= 0 or int(central.get("message_id") or 0) <= 0:
+    raise SystemExit(1)
+PY
+    then
+      ok=1
+      break
+    fi
+    sleep 5
+  done
+
+  if [[ "$ok" -ne 1 ]]; then
+    printf "%b🔴 Telegram Live Forum smoke-test failed.%b\n" "$R" "$N"
+    printf "%b   Installer will NOT report success because Overview/Central live messages were not confirmed.%b\n" "$Y" "$N"
+    journalctl -u marzwatch -n 60 --no-pager || true
+    return 1
+  fi
+
+  printf "%b✅ Telegram Overview topic + message confirmed%b\n" "$G" "$N"
+  printf "%b✅ Central node topic + live message confirmed%b\n" "$G" "$N"
+  return 0
+}
+
+verify_agent_live() {
+  printf "%b🔎 Verifying Node service + registration...%b\n" "$C" "$N"
+  systemctl is-active --quiet marzwatch || { printf "%b🔴 Node service is not active.%b\n" "$R" "$N"; return 1; }
+  verify_config_permissions || return 1
+
+  for _ in {1..18}; do
+    if [[ -s "$STATE_DIR/identity.json" ]]; then
+      printf "%b✅ Node identity confirmed%b\n" "$G" "$N"
+      return 0
+    fi
+    sleep 5
+  done
+
+  printf "%b🔴 Node registration was not confirmed.%b\n" "$R" "$N"
+  journalctl -u marzwatch -n 60 --no-pager || true
+  return 1
+}
+
 backup_existing() {
   local dst="/root/marzwatch-reinstall-backup-$(date +%Y%m%d-%H%M%S)"
   mkdir -m 0700 -p "$dst"
@@ -269,56 +353,64 @@ fresh_install() {
     clean_marzwatch
   fi
 
-  printf "%b[01/06] 📡 Fetch latest release...%b\n" "$C" "$N"
+  printf "%b[01/07] 📡 Fetch latest release...%b\n" "$C" "$N"
   download_verified_binary
-  printf "%b[02/06] 🔐 Release verified%b\n" "$G" "$N"
+  printf "%b[02/07] 🔐 Release checksum verified%b\n" "$G" "$N"
 
-  printf "%b[03/06] ⚙️ Building isolated runtime...%b\n" "$C" "$N"
+  printf "%b[03/07] ⚙️ Building isolated runtime...%b\n" "$C" "$N"
   install -m 0755 "$TMP_BIN" "$BIN"
   ensure_runtime_layout
 
-  printf "%b[04/06] 🧩 Setup wizard...%b\n\n" "$C" "$N"
+  printf "%b[04/07] 🧩 Setup + external validation...%b\n\n" "$C" "$N"
   if [[ "$role" == "1" ]]; then
     "$BIN" setup-central
   else
     "$BIN" setup-agent
   fi
   ensure_runtime_layout
+  verify_config_permissions
   write_unit
 
-  printf "\n%b[05/06] 🚀 Starting MarzWatch...%b\n" "$C" "$N"
+  printf "\n%b[05/07] 🚀 Starting MarzWatch...%b\n" "$C" "$N"
   systemctl daemon-reload
   systemctl enable --now marzwatch
   sleep 3
 
   if ! systemctl is-active --quiet marzwatch; then
     printf "%b🔴 MarzWatch start nashod.%b\n" "$R" "$N"
-    journalctl -u marzwatch -n 30 --no-pager || true
+    journalctl -u marzwatch -n 60 --no-pager || true
     return 1
   fi
 
-  printf "%b[06/06] 🤖 Enabling safe automatic updates...%b\n" "$C" "$N"
+  printf "%b[06/07] 🧪 End-to-end verification...%b\n" "$C" "$N"
+  if [[ "$role" == "1" ]]; then
+    verify_central_live || return 1
+  else
+    verify_agent_live || return 1
+  fi
+
+  printf "%b[07/07] 🤖 Enabling safe automatic updates...%b\n" "$C" "$N"
   bootstrap_auto_updater
 
+  if [[ "$role" == "1" ]]; then
+    # Verify again after updater bootstrap because it may install a newer binary
+    # and restart MarzWatch. Success is reported only if Telegram is still live.
+    verify_central_live || return 1
+  else
+    verify_agent_live || return 1
+  fi
+
   printf "\n%b╔══════════════════════════════════════╗%b\n" "$G" "$N"
-  printf "%b║      ✅ MARZWATCH CORE ONLINE        ║%b\n" "$G" "$N"
+  printf "%b║   ✅ INSTALL COMPLETE • VERIFIED      ║%b\n" "$G" "$N"
   printf "%b╚══════════════════════════════════════╝%b\n" "$G" "$N"
 
   if [[ "$role" == "1" ]]; then
+    printf "%b✅ Telegram Live Forum is confirmed and receiving MarzWatch messages.%b\n" "$G" "$N"
     printf "\n%b🔐 NODE CONNECTION TOKEN%b\n" "$Y" "$N"
     "$BIN" join-key
     printf "%bToken ro private negah dar.%b\n" "$D" "$N"
   else
-    for _ in {1..15}; do
-      [[ -s "$STATE_DIR/identity.json" ]] && break
-      sleep 2
-    done
-    if [[ -s "$STATE_DIR/identity.json" ]]; then
-      printf "%b✅ Node ba Central register shod.%b\n" "$G" "$N"
-    else
-      printf "%b🟡 Service online ast vali registration hanooz retry mishe.%b\n" "$Y" "$N"
-      echo "Safe diagnostics: installer ro dobare ejra kon va option 5 ro bezan."
-    fi
+    printf "%b✅ Node registration confirmed.%b\n" "$G" "$N"
   fi
 
   printf "\n%b🛡 Marzban / Xray / Docker / Firewall: UNTOUCHED%b\n" "$G" "$N"

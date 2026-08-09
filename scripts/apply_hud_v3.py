@@ -115,6 +115,7 @@ func formatNodeBlock(n model.Node, on bool, date string) string {
 ┃
 ┃ 📡 NETWORK
 ┃ ⬇️ %s   ⬆️ %s
+┃ ↕️ TOTAL  %s
 ┃
 ┃ 📦 TODAY  %s
 ┃ ⏱ %s   🛡 %d/100
@@ -123,7 +124,7 @@ func formatNodeBlock(n model.Node, on bool, date string) string {
 		statusEmoji(cpu), hudBar(cpu), cpu,
 		statusEmoji(ram), hudBar(ram), ram,
 		statusEmoji(disk), hudBar(disk), disk,
-		rate(n.Latest.RXBps), rate(n.Latest.TXBps),
+		rate(n.Latest.RXBps), rate(n.Latest.TXBps), rate(n.Latest.RXBps+n.Latest.TXBps),
 		bytes(todayRX+todayTX), durationLong(time.Duration(n.Latest.UptimeSeconds)*time.Second), health(n, on))
 }
 

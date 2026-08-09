@@ -22,6 +22,7 @@ type Config struct {
 	Timezone        string `json:"timezone,omitempty"`
 	TelegramToken   string `json:"telegram_token,omitempty"`
 	AdminChatID     int64  `json:"admin_chat_id,omitempty"`
+	TelegramGroupID int64  `json:"telegram_group_id,omitempty"`
 	JoinToken       string `json:"join_token,omitempty"`
 	CentralURL      string `json:"central_url,omitempty"`
 	CertFingerprint string `json:"cert_fingerprint,omitempty"`

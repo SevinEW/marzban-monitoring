@@ -91,3 +91,38 @@ can use menu option 6 to update without deleting its configuration or state.
 
 Release builds apply the source transforms listed in `.github/workflows/release.yml`
 before testing and compiling. Run that complete sequence when building from source.
+
+## Location repair and quiet topics
+
+Country grouping now precedes natural name sorting in Overview. Topic names use
+stable country labels (for example `TR` plus the server name), so registering a
+node does not renumber and rename all other topics. Telegram controls its own
+activity-based topic ordering; the Bot API cannot force a permanent sidebar order.
+
+IP detection prefers a single public non-tunnel interface IPv4, then tries two
+external IP endpoints. Geolocation compares ipwho.is and ipapi.co for that exact
+IP. Disagreeing countries are left unknown; disagreeing cities are omitted.
+A single available provider remains a best-effort estimate, not physical-location
+proof. NAT/VPN egress and inaccurate IP registries may still require an override.
+Existing agents advertise their newly detected IP after restarting. Authenticated
+connections fill missing IPs on Central; Central periodically retries incomplete
+metadata with backoff and refreshes successful lookups daily. Identity and traffic
+history are retained.
+
+On Central, explicitly correct a known country without guessing from a node name:
+
+```bash
+marzwatchctl location Turkey2 TR
+systemctl restart marzwatch
+```
+
+An optional city follows the country code. Use `auto` instead of a country to
+remove an override. Node names must uniquely match one saved node; duplicate names
+require the node ID. Preferences are stored by node ID and survive normal updates.
+
+A dedicated update consumer deletes only rename service messages authored by this
+bot in its managed topics, when Telegram delivers those events. It persists its
+cursor, respects the shared write pacing, and stops if a webhook or another poller
+conflicts. It does not scan/delete arbitrary history or monitor cards. Events older
+than Telegram's update queue cannot be recovered this way; historical notifications
+may need manual deletion, and Telegram's message-deletion age limits still apply.

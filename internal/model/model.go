@@ -11,6 +11,7 @@ type Location struct {
 }
 
 type Metric struct {
+ PublicIP string `json:"public_ip,omitempty"`
 	Timestamp     time.Time `json:"timestamp"`
 	CPUPercent    float64   `json:"cpu_percent"`
 	Load1         float64   `json:"load1"`

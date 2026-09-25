@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+"github.com/SevinEW/marzban-monitoring/internal/model"
 )
 
 const DefaultPath = "/etc/marzwatch/config.json"
 
 type Config struct {
+ LocationOverrides map[string]model.Location `json:"location_overrides,omitempty"`
 	Role            string `json:"role"`
 	Name            string `json:"name"`
 	Listen          string `json:"listen,omitempty"`

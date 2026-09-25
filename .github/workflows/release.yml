@@ -35,6 +35,7 @@ jobs:
           python3 scripts/apply_telegram_rate_limit.py
           python3 scripts/apply_forum_reliability.py
           python3 scripts/apply_synchronized_telemetry.py
+          python3 scripts/apply_location_topics.py
           gofmt -w cmd internal
 
       - name: Test
@@ -65,6 +66,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Tested MarzWatch build with mandatory Telegram Forum validation during fresh Central setup, clock-aligned 5-second telemetry with bounded latest-only buffering and just-in-time Telegram rendering, flood-safe paced Telegram forum updates with RetryAfter backoff, exact per-node last-update timestamps, total live bandwidth, one topic per server, six-hour stale-node/topic cleanup, MW2 tokens, safe self-heal, and fleet auto-update.' \
+            --notes 'Tested MarzWatch build with five-second telemetry, country-grouped Overview, stable country topic labels, retrying public-IP and location recovery, explicit per-node country overrides, and scoped cleanup of delivered bot rename notices. Existing live-card design and duplicate-prevention remain intact. Historical Telegram events outside the update queue require manual cleanup.' \
             --latest \
             --target "${GITHUB_SHA}"

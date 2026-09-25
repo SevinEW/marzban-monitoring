@@ -11,6 +11,9 @@ import (
 func sortedForumNodes(nodes []model.Node) []model.Node {
 	result := append([]model.Node(nil), nodes...)
 	sort.Slice(result, func(i, j int) bool {
+		if a, b := countryKey(result[i]), countryKey(result[j]); a != b {
+			return a < b
+		}
 		a, b := strings.ToLower(strings.TrimSpace(result[i].Name)), strings.ToLower(strings.TrimSpace(result[j].Name))
 		if a == b {
 			return result[i].ID < result[j].ID

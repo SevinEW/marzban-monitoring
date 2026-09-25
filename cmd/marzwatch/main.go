@@ -44,6 +44,9 @@ func main() {
 	case "fleet-update":
 		mustRoot()
 		fleetUpdate()
+	case "location":
+		mustRoot()
+		setNodeLocation()
 	case "doctor":
 		doctor()
 	case "uninstall":
@@ -56,7 +59,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Println("MarzWatch\n\nCommands:\n  run\n  setup-central\n  setup-agent\n  join-key\n  fleet-update\n  doctor\n  uninstall")
+	fmt.Println("MarzWatch\n\nCommands:\n  run\n  setup-central\n  setup-agent\n  join-key\n  fleet-update\n  location NODE_NAME COUNTRY_CODE [CITY]\n  doctor\n  uninstall")
 }
 
 func run() {

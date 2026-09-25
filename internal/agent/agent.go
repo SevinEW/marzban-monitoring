@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+"sync/atomic"
 	"time"
 
 	"github.com/SevinEW/marzban-monitoring/internal/collector"
@@ -39,6 +40,7 @@ type identity struct {
 }
 
 type Agent struct {
+ publicIP atomic.Value
 	cfg    config.Config
 	id     identity
 	client *http.Client
@@ -56,6 +58,7 @@ func Run(cfg config.Config) error {
 			return err
 		}
 	}
+	go func() { a.publicIP.Store(geo.Detect().PublicIP) }()
 	go a.superviseCollector()
 	return a.sendLoop()
 }
@@ -172,6 +175,7 @@ func (a *Agent) sendLoop() error {
 }
 
 func (a *Agent) sendMetric(m model.Metric) error {
+ if ip:=a.publicIP.Load();ip!=nil {m.PublicIP=ip.(string)}
 	b, _ := json.Marshal(m)
 	ts := fmt.Sprintf("%d", time.Now().Unix())
 	mac := hmac.New(sha256.New, []byte(a.id.NodeSecret))

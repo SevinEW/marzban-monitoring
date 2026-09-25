@@ -109,9 +109,10 @@ func (b *Bot) withGroupWrite(chatID int64, fn func() error) error {
 \t\ttime.Sleep(d)
 \t}
 
+\tstarted := time.Now()
 \terr := fn()
 \tnow := time.Now()
-\tb.groupNext = now.Add(forumWriteSpacing)
+\tb.groupNext = started.Add(forumWriteSpacing)
 \tif retry, ok := RetryAfter(err); ok {
 \t\t// Obey Telegram's explicit cooldown with a one-second safety margin.
 \t\tb.groupBlockedUntil = now.Add(retry + time.Second)

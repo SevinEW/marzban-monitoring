@@ -38,6 +38,7 @@ jobs:
           python3 scripts/apply_location_topics.py
           python3 scripts/apply_node_identity.py
           python3 scripts/apply_custom_emoji.py
+          python3 scripts/apply_expiry_ip.py
           gofmt -w cmd internal
 
       - name: Test
@@ -68,6 +69,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Durable node registration, explicit duplicate-identity merges with archived history, deleted-topic recovery, offline identity retention, and custom emoji for monitoring messages. Includes country grouping and five-second telemetry. Custom emoji eligibility depends on Telegram bot ownership. Ambiguous topic creation is held for reconciliation instead of blindly duplicated.' \
+            --notes 'Remove nodes after more than one hour without authenticated contact, including archived aliases, with durable cleanup and restart-safe merge configuration. Refresh public IP every 30 seconds, preserve the last valid address on lookup failure, log address changes, and update live cards. Existing custom emoji, country overrides, five-second telemetry and topic recovery are preserved.' \
             --latest \
             --target "${GITHUB_SHA}"

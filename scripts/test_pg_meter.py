@@ -46,5 +46,12 @@ class LedgerTest(unittest.TestCase):
   self.l.sample(1,100000,{'a|uplink':100})
   self.l.sample(1,100010,{'a|uplink':200,'b|uplink':10**12})
   self.assertEqual(self.l.totals(100010)['1']['tx'],100)
+ def test_retired_node_history_ages_out_instead_of_disappearing(self):
+  self.sample(100000,1000);self.sample(100010,2000)
+  snap=meter.snapshot(self.l,{},100010)
+  self.assertEqual(snap['nodes']['1']['rx'],1000)
+  self.assertFalse(snap['nodes']['1']['active'])
+  self.l.commit(200000)
+  self.assertEqual(meter.snapshot(self.l,{},200000)['nodes'],{})
 
 if __name__=='__main__':unittest.main()

@@ -7,7 +7,7 @@ Lightweight, fail-safe monitoring for Marzban/Xray node fleets with Telegram rep
 - Agent reads lightweight Linux counters from `/proc` and `statfs`.
 - One static Go binary; no Python/Redis/PostgreSQL/Docker dependency.
 - Five-second local sampling and healthy-path metric delivery on shared clock boundaries.
-- Daily report at 00:00 in the configured MarzWatch timezone.
+- Daily traffic and reports use Asia/Tehran; the current-day counter rolls over at Iran midnight (00:00).
 - TLS certificate fingerprint is pinned inside the Join Key.
 - HMAC-signed node metrics.
 - Central and agent are systemd resource-limited.
@@ -22,7 +22,7 @@ Then choose:
 2. Node Server
 
 ### Central
-Prompts for Telegram bot token, admin chat ID, report timezone, port and name. It creates a Join Key after startup.
+Prompts for Telegram bot token, admin chat ID, port and name (daily accounting uses Asia/Tehran). It creates a Join Key after startup.
 
 ### Node
 Prompts for central IP, central port and Join Key. It registers automatically.
@@ -126,3 +126,9 @@ cursor, respects the shared write pacing, and stops if a webhook or another poll
 conflicts. It does not scan/delete arbitrary history or monitor cards. Events older
 than Telegram's update queue cannot be recovered this way; historical notifications
 may need manual deletion, and Telegram's message-deletion age limits still apply.
+
+## Iran daily traffic
+
+Traffic TODAY is the Iran calendar day starting at 00:00, not a rolling 24-hour window. Central uses the same embedded Asia/Tehran timezone for accounting, live cards and daily reports, independently of the host timezone or an older configured timezone. History remains saved; midnight selects the new day instead of erasing yesterday. Cards show the new day on their next Telegram update.
+
+Counter intervals crossing midnight are divided in proportion to elapsed time, preserving the total byte count. With five-second samples, the exact per-packet distribution inside that boundary interval is not known. Existing historical daily totals are retained and cannot be rebucketed from aggregates if a previous installation used a different timezone; the first full Iran day after upgrading is the clean comparison period. Restarting does not reset saved daily totals.

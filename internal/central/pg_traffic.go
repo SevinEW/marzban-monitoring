@@ -58,10 +58,8 @@ func replacePGTraffic(text, value string, networkOK bool) string {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		if pos := strings.Index(line, "📦 TODAY"); pos >= 0 {
-			lines[i] = line[:pos] + "📦 24H PG  " + value
+			lines[i] = line[:pos] + "📦 24H  " + value
 		}
-		lines[i] = strings.ReplaceAll(lines[i], "LIVE NETWORK", "PG NETWORK")
-		lines[i] = strings.ReplaceAll(lines[i], "📡 NETWORK", "📡 PG NETWORK")
 		if !networkOK && (strings.Contains(lines[i], "⬇️") || strings.Contains(lines[i], "↕️")) {
 			if p := strings.Index(lines[i], "⬇️"); p >= 0 {
 				lines[i] = lines[i][:p] + "⬇️ N/A   ⬆️ N/A"

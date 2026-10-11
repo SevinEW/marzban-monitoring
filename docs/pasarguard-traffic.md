@@ -24,6 +24,8 @@ RAM, disk and health remain host metrics; `PG NETWORK` is proxy traffic.
 * Overview sums unique panel IDs, never monitor aliases. If a node is stale,
   its retained history is included and the total is marked partial; stale
   rates are excluded. Host-only relay cards do not enter the proxy total.
+  Removed/disabled nodes retain their already-recorded bytes until those bytes
+  age out of the window; removing a node cannot erase recent consumption.
 
 ## Resource budget
 

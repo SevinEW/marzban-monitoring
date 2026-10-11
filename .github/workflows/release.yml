@@ -40,10 +40,12 @@ jobs:
           python3 scripts/apply_custom_emoji.py
           python3 scripts/apply_expiry_ip.py
           python3 scripts/apply_iran_day.py
+          python3 scripts/apply_pg_traffic.py
           gofmt -w cmd internal
 
       - name: Test
         run: |
+          python3 scripts/test_pg_meter.py
           go test -race ./...
           go vet ./...
           bash -n scripts/install.sh
@@ -70,6 +72,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Account daily traffic by Asia/Tehran calendar dates, roll over at Iran midnight, and split cross-midnight samples without losing bytes. Preserve the live-card design, custom emoji, one-hour offline expiry and dynamic IP refresh.' \
+            --notes 'Add opt-in independent PasarGuard proxy accounting with a rolling 24-hour window, bounded history, restart detection, and explicit partial-data markers. Preserve existing live-card layout and custom emoji.' \
             --latest \
             --target "${GITHUB_SHA}"

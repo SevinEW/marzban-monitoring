@@ -2,7 +2,7 @@
 
 Lightweight, fail-safe monitoring for Marzban/Xray node fleets with Telegram reporting.
 
-## Design rules
+## Design rules (standard monitor)
 - Does **not** modify Marzban, Xray, Docker, firewall, routes, DNS or certificates.
 - Agent reads lightweight Linux counters from `/proc` and `statfs`.
 - One static Go binary; no Python/Redis/PostgreSQL/Docker dependency.
@@ -12,6 +12,16 @@ Lightweight, fail-safe monitoring for Marzban/Xray node fleets with Telegram rep
 - HMAC-signed node metrics.
 - Central and agent are systemd resource-limited.
 - State snapshots are bounded and flushed at a low frequency to reduce disk writes.
+
+## Optional PasarGuard rolling traffic
+
+An explicitly enabled [PasarGuard adapter](docs/pasarguard-traffic.md) replaces
+forum traffic fields with independent Xray inbound accounting over the preceding
+24 hours. It uses a small collector in the existing panel container, needs inbound
+stats enabled on the relevant Xray cores, and never resets the panel's counters.
+It excludes host/API traffic, preserves the HUD, and labels incomplete coverage
+with `*`. The standard installer does not configure this adapter or change proxy
+cores. See the guide for deployment, resource bounds, accuracy and rollback.
 
 ## Install UX
 ```bash

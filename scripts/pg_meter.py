@@ -102,6 +102,18 @@ def publish(data):
     os.replace(tmp,OUTPUT)
 
 
+def snapshot(ledger, metadata, now):
+    # Removing/disabling a node must not erase bytes it used inside the window.
+    values=ledger.totals(now)
+    for node in values:
+        values[node].update(metadata.get(node,{}))
+        values[node]['active']=node in metadata
+    for node,meta in metadata.items():
+        if node not in values:
+            values[node]=dict(meta,rx=0,tx=0,rx_bps=0,tx_bps=0,last=0,complete=False,active=True)
+    return {'schema':1,'source':'xray-inbound-no-reset','window_seconds':WINDOW,'generated':now,'nodes':values}
+
+
 async def run():
     import fcntl
     import asyncpg
@@ -189,13 +201,7 @@ async def run():
                     if failures==1:print('meter node '+str(node)+' unavailable: '+type(e).__name__,flush=True)
         await asyncio.gather(*(collect(n,e) for n,e in clients.items()))
         now=time.time();ledger.commit(now)
-        values={node:value for node,value in ledger.totals(now).items() if node in metadata}
-        for node in values:
-            values[node].update(metadata.get(node,{}))
-        for node,meta in metadata.items():
-            if node not in values:
-                values[node]=dict(meta,rx=0,tx=0,rx_bps=0,tx_bps=0,last=0,complete=False)
-        publish({'schema':1,'source':'xray-inbound-no-reset','window_seconds':WINDOW,'generated':now,'nodes':values})
+        publish(snapshot(ledger,metadata,now))
         await asyncio.sleep(max(1,INTERVAL-(time.monotonic()-started)))
 
 

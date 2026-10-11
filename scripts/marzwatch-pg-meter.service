@@ -1,0 +1,19 @@
+[Unit]
+Description=MarzWatch independent PasarGuard traffic meter
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=simple
+Environment=PG_CONTAINER=pasarguard-pasarguard-1
+ExecStart=/usr/bin/docker exec -e PYTHONPATH=/code ${PG_CONTAINER} python /var/lib/pasarguard/marzwatch-meter/pg_meter.py
+ExecStopPost=-/usr/bin/docker exec ${PG_CONTAINER} python /var/lib/pasarguard/marzwatch-meter/pg_meter.py --stop
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=20
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

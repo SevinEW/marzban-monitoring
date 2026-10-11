@@ -49,7 +49,7 @@ func TestPGSummaryRetainsOfflineHistoryAndMarksIncomplete(t *testing.T) {
 func TestPGDisplayDoesNotLeakHostTotalsOrRatesOnFailure(t *testing.T) {
 	text := "┃ 📡 NETWORK\n┃ ⬇️ HOST-DOWN ⬆️ HOST-UP\n┃ ↕️ TOTAL HOST-TOTAL\n┃ 📦 TODAY HOST-USAGE\n┃ ⚡ CPU"
 	out := replacePGTraffic(text, "N/A", false)
-	if strings.Contains(out, "HOST-") || !strings.Contains(out, "📦 24H PG  N/A") || !strings.Contains(out, "┃ ⚡ CPU") {
+	if strings.Contains(out, "HOST-") || !strings.Contains(out, "📦 24H  N/A") || !strings.Contains(out, "┃ ⚡ CPU") {
 		t.Fatal(out)
 	}
 }

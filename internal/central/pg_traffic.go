@@ -87,7 +87,7 @@ func (s *Server) formatPGNode(n model.Node, on bool, date string) string {
 		if !u.Complete {
 			value += " *"
 		}
-		n.Latest.RXBps, n.Latest.TXBps = u.RXBps, u.TXBps
+		n.Latest.RXBps, n.Latest.TXBps = pgBitsPerSecond(u.RXBps), pgBitsPerSecond(u.TXBps)
 	}
 	return replacePGTraffic(formatNodeBlock(n, on, date), value, ok)
 }
@@ -137,8 +137,8 @@ func summarizePG(v pgSnapshot, now time.Time) (string, float64, float64, bool) {
 		any = true
 		complete = complete && u.Complete && fresh
 		if fresh {
-			rx += u.RXBps
-			tx += u.TXBps
+			rx += pgBitsPerSecond(u.RXBps)
+			tx += pgBitsPerSecond(u.TXBps)
 		}
 	}
 	value := bytes(total)
@@ -147,3 +147,6 @@ func summarizePG(v pgSnapshot, now time.Time) (string, float64, float64, bool) {
 	}
 	return value, rx, tx, any
 }
+
+// The independent meter stores bytes/second; model rates and rate() use bits/second.
+func pgBitsPerSecond(bytesPerSecond float64) float64 { return bytesPerSecond * 8 }

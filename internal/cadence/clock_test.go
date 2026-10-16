@@ -7,13 +7,13 @@ import (
 
 func TestSharedBoundary(t *testing.T) {
 	base := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
-	for _, phase := range []time.Duration{0, time.Millisecond, 2 * time.Second, 4999 * time.Millisecond} {
+	for _, phase := range []time.Duration{0, time.Millisecond, Interval / 2, Interval - time.Millisecond} {
 		if got := Next(base.Add(phase)); !got.Equal(base.Add(Interval)) {
 			t.Fatalf("phase %s: got %s", phase, got)
 		}
 	}
 	// Missing multiple slots must skip them, not replay or drift from completion.
-	if got := Next(base.Add(12700 * time.Millisecond)); !got.Equal(base.Add(15 * time.Second)) {
+	if got := Next(base.Add(12700 * time.Millisecond)); !got.Equal(base.Add(14 * time.Second)) {
 		t.Fatal(got)
 	}
 }

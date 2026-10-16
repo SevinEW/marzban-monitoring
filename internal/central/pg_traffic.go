@@ -73,6 +73,7 @@ func replacePGTraffic(text, value string, networkOK bool) string {
 }
 
 func (s *Server) formatPGNode(n model.Node, on bool, date string) string {
+ if s.cfg.HostTraffic { return s.formatHostNode(n,on,date) }
 	if !s.cfg.PasarGuardTraffic {
 		return formatNodeBlock(n, on, date)
 	}
@@ -93,6 +94,7 @@ func (s *Server) formatPGNode(n model.Node, on bool, date string) string {
 }
 
 func (s *Server) formatPGOverview(nodes []model.Node, now time.Time) string {
+ if s.cfg.HostTraffic { return s.formatHostOverview(nodes,now) }
 	if !s.cfg.PasarGuardTraffic {
 		return formatOverviewLive(nodes, now)
 	}

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const Interval = 5 * time.Second
+const Interval = 2 * time.Second
 const TimeHeader = "X-Marzwatch-Time"
 
 type Clock struct{ offset atomic.Int64 }

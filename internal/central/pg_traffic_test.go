@@ -41,7 +41,7 @@ func TestPGSummaryRetainsOfflineHistoryAndMarksIncomplete(t *testing.T) {
 		"2": {RX: 400, TX: 500, RXBps: 1000, TXBps: 2000, Last: 199000, Complete: true},
 	}}
 	value, rx, tx, ok := summarizePG(v, now)
-	if !ok || value != bytes(1200)+" *" || rx != 10 || tx != 20 {
+	if !ok || value != bytes(1200)+" *" || rx != 80 || tx != 160 {
 		t.Fatalf("%q %v %v %v", value, rx, tx, ok)
 	}
 }
@@ -52,4 +52,19 @@ func TestPGDisplayDoesNotLeakHostTotalsOrRatesOnFailure(t *testing.T) {
 	if strings.Contains(out, "HOST-") || !strings.Contains(out, "📦 24H  N/A") || !strings.Contains(out, "┃ ⚡ CPU") {
 		t.Fatal(out)
 	}
+}
+
+func TestPGRateUnitsMatchHostAndTelegram(t *testing.T) {
+ now := time.Unix(200000, 0)
+ v := pgSnapshot{Nodes: map[string]pgUsage{
+  "1": {RX: 100, TX: 200, RXBps: 125000000, TXBps: 12500000, Last: 200000, Complete: true},
+  "2": {RX: 300, TX: 400, RXBps: 100000000, TXBps: 12500000, Last: 200000, Complete: true},
+ }}
+ total, rx, tx, ok := summarizePG(v, now)
+ if !ok || total != bytes(1000) || rate(rx+tx) != "2.00 Gbps" {
+  t.Fatalf("total=%s rx=%v tx=%v ok=%v", total, rx, tx, ok)
+ }
+ if rate(pgBitsPerSecond(15000000)) != "120.00 Mbps" {
+  t.Fatal("byte rate was not converted to bits exactly once")
+ }
 }

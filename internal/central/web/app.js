@@ -37,7 +37,7 @@ const ICONS={
 const icon=k=>`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]||ICONS.network}</svg>`;
 $$('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
 const countryNames={DE:'آلمان',FI:'فنلاند',FR:'فرانسه',GB:'بریتانیا',IR:'ایران',NL:'هلند',SE:'سوئد',TR:'ترکیه',US:'آمریکا',PL:'لهستان',IT:'ایتالیا',AE:'امارات',CA:'کانادا',CH:'سوئیس',AT:'اتریش',ES:'اسپانیا',PT:'پرتغال',RU:'روسیه',UA:'اوکراین',JP:'ژاپن',SG:'سنگاپور',AU:'استرالیا',IN:'هند',BR:'برزیل',DK:'دانمارک',NO:'نروژ',BE:'بلژیک',CZ:'چک',RO:'رومانی',HU:'مجارستان'};
-const flag=code=>countryNames[code]?`<svg class="flag" viewBox="0 0 640 480" aria-hidden="true"><use href="/flags.svg#${code}"/></svg>`:`<span class="flag-fallback">${escapeHTML(code||'—')}</span>`;
+const flag=code=>countryNames[code]?`<svg class="flag" viewBox="0 0 640 480" aria-hidden="true"><use href="/flags.svg#${code}"></use></svg>`:`<span class="flag-fallback">${escapeHTML(code||'—')}</span>`;
 const statusNames={online:'عادی',warning:'مصرف بالا',stale:'با تأخیر',offline:'ارتباط قطع'};
 const tehranClock=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tehran',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const timeLabel=t=>tehranClock.format(new Date(t));
@@ -46,7 +46,8 @@ const stored=localStorage.getItem('mw-reduced');let reduced=stored===null?matchM
 const records=new Map();let source,animationID,lastDraw=0;
 const resources=[['cpu','پردازنده','CPU / CAPACITY'],['ram','حافظه','RAM / ALLOCATION'],['disk','فضای دیسک','DISK / STORAGE']];
 $('#resource-grid').innerHTML=resources.map(([k,name,en])=>`<article class="resource-panel ${k}"><div class="resource-top"><span>${icon(k)}${name}</span><small>${en}</small></div><div class="resource-body"><div class="gauge"><svg viewBox="0 0 150 115" aria-hidden="true"><path class="g-track" d="M25 91A59 59 0 1 1 125 91" pathLength="100"/><path id="gauge-${k}" class="g-fill" d="M25 91A59 59 0 1 1 125 91" pathLength="100"/><path class="g-dashes" d="M25 91A59 59 0 1 1 125 91" pathLength="100"/><path class="g-ticks" d="M35 85A47 47 0 1 1 115 85" pathLength="100"/></svg><div class="gauge-value" id="resource-${k}">—</div><span class="gauge-label">${k==='cpu'?'میانگین وزنی هسته‌ها':'نسبت مصرف به کل ظرفیت'}</span></div><div class="resource-caption" id="caption-${k}"></div></div><div class="resource-chart"><canvas id="chart-${k}" aria-label="تاریخچهٔ ${name} کل شبکه"></canvas></div><div class="resource-foot"><span>روند در بازهٔ انتخابی</span><b id="peak-${k}">—</b></div></article>`).join('');
-function writeHTML(el,html){if(el.innerHTML!==html)el.innerHTML=html}
+const renderedHTML=new WeakMap();
+function writeHTML(el,html){if(renderedHTML.get(el)!==html){el.innerHTML=html;renderedHTML.set(el,html)}}
 function compact(f){return{time:f.time,nodes:f.nodes.map(n=>({id:n.id,cpu:n.cpu,cores:n.cores,ram:n.ram,ram_total:n.ram_total,disk:n.disk,disk_total:n.disk_total,rx:n.rx,tx:n.tx,status:n.status,seen:n.seen}))}}
 function accept(f){if(!f||!Array.isArray(f.nodes))return;frame=f;lastReceived=Date.now();if(!history.length||f.time>history.at(-1).time)history.push(compact(f));history=history.filter(x=>x.time>=f.time-360000).slice(-361);render();updateCharts()}
 function streamState(ok){connected=ok;$('#connection').className='connection '+(ok?'live':'error');$('#connection span').textContent=ok?'جریان زنده':'اتصال مجدد';$('#stream-note').textContent=ok?'جریان زنده از مرکزی':'نمایش آخرین داده';$('#connection-notice').hidden=ok||!frame;document.body.classList.toggle('disconnected',!ok)}

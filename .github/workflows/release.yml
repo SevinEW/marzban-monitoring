@@ -45,6 +45,8 @@ jobs:
 
       - name: Test
         run: |
+          node --check internal/central/web/app.js
+          node scripts/check-web-precision.cjs
           python3 scripts/test_pg_meter.py
           go test -race ./...
           go vet ./...
@@ -72,6 +74,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Add opt-in independent PasarGuard proxy accounting with a rolling 24-hour window, bounded history, restart detection, and explicit partial-data markers. Preserve existing live-card layout and custom emoji.' \
+            --notes 'Introduce the dark Precision Observatory: timestamp-accurate bandwidth charts, CPU/RAM/disk gauges and history, local SVG country flags, custom icons, detailed server inspection, and explicit stale-data gaps. Preserve live collection, rolling 24-hour host traffic, authentication, and lightweight streaming.' \
             --latest \
             --target "${GITHUB_SHA}"

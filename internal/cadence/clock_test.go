@@ -13,7 +13,7 @@ func TestSharedBoundary(t *testing.T) {
 		}
 	}
 	// Missing multiple slots must skip them, not replay or drift from completion.
-	if got := Next(base.Add(12700 * time.Millisecond)); !got.Equal(base.Add(14 * time.Second)) {
+	if got := Next(base.Add(12700 * time.Millisecond)); !got.Equal(base.Add(13 * time.Second)) {
 		t.Fatal(got)
 	}
 }

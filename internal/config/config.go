@@ -17,6 +17,8 @@ import (
 const DefaultPath = "/etc/marzwatch/config.json"
 
 type Config struct {
+ WebListen string `json:"web_listen,omitempty"`
+ TelegramDisabled bool `json:"telegram_disabled,omitempty"`
  LocationOverrides map[string]model.Location `json:"location_overrides,omitempty"`
 	Role            string `json:"role"`
 	Name            string `json:"name"`

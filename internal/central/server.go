@@ -49,6 +49,7 @@ type Server struct {
 }
 
 func Run(cfg config.Config) error {
+ if cfg.TelegramDisabled {cfg.TelegramToken="";cfg.AdminChatID=0;cfg.TelegramGroupID=0}
 	tz, err := time.LoadLocation(cfg.Timezone)
 	if err != nil {
 		return fmt.Errorf("timezone: %w", err)
@@ -62,7 +63,8 @@ func Run(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("central TLS fingerprint: %s", fp)
+	if err:=s.startWebPanel();err!=nil{return err}
+ log.Printf("central TLS fingerprint: %s", fp)
 	go st.FlushLoop(s.stop, log.Printf)
 	go s.supervise("local-collector", s.localCollector)
 	go s.supervise("offline-loop", s.offlineLoop)

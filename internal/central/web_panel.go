@@ -170,27 +170,7 @@ func (s *Server) startWebPanel() error {
 		_, _ = w.Write(b)
 	})
 	mux.Handle("GET /", http.FileServer(http.FS(assets)))
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Loopback listener is intentionally private, not an unauthenticated public API.
-		hostname, _, e := net.SplitHostPort(r.Host)
-		if e != nil {
-			hostname = r.Host
-		}
-		hi := net.ParseIP(hostname)
-		if hostname != "localhost" && (hi == nil || !hi.IsLoopback()) {
-			http.Error(w, "Invalid host", 403)
-			return
-		}
-		if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
-			http.Error(w, "Cross-site request denied", 403)
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
-		mux.ServeHTTP(w, r)
-	})
+	handler := webPanelSecurity(mux)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8 << 10}
 	go func() {
 		if e := server.Serve(ln); e != nil && e != http.ErrServerClosed {

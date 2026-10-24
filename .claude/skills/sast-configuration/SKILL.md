@@ -49,9 +49,17 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # required to scan pull_request events
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # required for repos owned by an organization
+    permissions:
+      contents: read
+      pull-requests: read   # lets the action list the PR's commits
 ```
 
 Pin action versions (ideally to SHAs), keep `permissions` minimal, and add the per-language job (e.g. `go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...`).
+
+`--error` fails the job on any finding. On a repo with existing findings, either drop it during the report-only phase or scan only what the PR adds with `--baseline-commit ${{ github.event.pull_request.base.sha }}` (pull_request events only).
 
 ## 4. Rollout policy
 

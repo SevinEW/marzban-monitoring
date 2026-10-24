@@ -19,7 +19,7 @@ Build dashboards that answer a question an operator has at 3 a.m., kept in git a
 5. **Write correct PromQL.**
    - Counters: always `rate()`/`increase()` over `$__rate_interval`, never raw.
    - Aggregate with `sum by (...)` before `histogram_quantile(0.95, sum by (le, ...)(rate(x_bucket[$__rate_interval])))`.
-   - Ratios: guard divide-by-zero (`/ clamp_min(..., 1)` or `> 0`).
+   - Ratios: guard divide-by-zero by filtering the denominator (`a / (b > 0)`); don't use `clamp_min(b, 1)`, which distorts any rate below 1/s.
    - Avoid high-cardinality labels in legends; set `legendFormat` (`{{instance}}`).
 6. **Set units and thresholds** on every panel (`bytes`, `bps`, `percentunit`, `s`, `reqps`). Min 0 for counts. Decimals sensible.
 7. **Provision as code.** Store the JSON under the repo (e.g. `grafana/dashboards/*.json`) with a provisioning file:

@@ -48,6 +48,7 @@ jobs:
           node --check internal/central/web/app.js
           node scripts/check-web-precision.cjs
           python3 scripts/test_pg_meter.py
+          python3 scripts/test_release_download.py
           go test -race ./...
           go vet ./...
           bash -n scripts/install.sh

@@ -3,6 +3,56 @@ set -Eeuo pipefail
 
 REPO="${MARZWATCH_REPO:-SevinEW/marzban-monitoring}"
 VERSION="${MARZWATCH_VERSION:-latest}"
+
+# BEGIN resilient release download (kept identical in the standalone scripts).
+download_release_file() (
+  local url="$1" output="$2" timeout="$3"
+  local partial attempt rc=1 http_code route
+  local -a transport
+  partial="$(mktemp "${output}.part.XXXXXX")" || return 1
+  trap 'rm -f -- "$partial"' EXIT
+  for attempt in 1 2 3 4; do
+    transport=()
+    route="default network"
+    case "$attempt" in
+      2|4) transport=(-4 --http1.1); route="IPv4 / HTTP 1.1" ;;
+      3) transport=(--http1.1); route="dual-stack / HTTP 1.1" ;;
+    esac
+    # Start every attempt from an empty private file. Never append partial bytes.
+    : > "$partial"
+    printf '[MarzWatch Download] attempt %s/4 (%s)\n' "$attempt" "$route" >&2
+    if http_code="$(curl -q -fSL --proto '=https' --proto-redir '=https' \
+      --connect-timeout 10 --max-time "$timeout" "${transport[@]}" \
+      --write-out '%{http_code}' --output "$partial" "$url")"; then
+      if [[ -s "$partial" ]]; then
+        mv -f -- "$partial" "$output" || return 1
+        return 0
+      fi
+      rc=18
+    else
+      rc=$?
+    fi
+    case "$rc" in
+      5|6|7|16|18|28|35|52|55|56|92|95) ;;
+      22)
+        case "$http_code" in
+          404|408|429|500|502|503|504|522|524) ;;
+          *) break ;;
+        esac ;;
+      *) break ;;
+    esac
+    if [[ "$attempt" -lt 4 ]]; then
+      printf '[MarzWatch Download] interrupted (curl=%s, HTTP=%s); retrying in %ss\n' \
+        "$rc" "${http_code:-000}" "$attempt" >&2
+      sleep "$attempt"
+    fi
+  done
+  printf '[MarzWatch Download] failed (curl=%s, HTTP=%s). No downloaded file was installed. Check access to GitHub release assets.\n' \
+    "$rc" "${http_code:-000}" >&2
+  return "$rc"
+)
+# END resilient release download.
+
 BIN="/usr/local/bin/marzwatch"
 CTL="/usr/local/bin/marzwatchctl"
 CONFIG="/etc/marzwatch/config.json"
@@ -69,9 +119,9 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 log "checking verified release"
-curl -fL --retry 3 --connect-timeout 10 --max-time 120 "$base/$asset" -o "$tmpdir/$asset"
-curl -fL --retry 3 --connect-timeout 10 --max-time 60 "$base/marzwatch-auto-update.sh" -o "$tmpdir/marzwatch-auto-update.sh"
-curl -fL --retry 3 --connect-timeout 10 --max-time 60 "$base/SHA256SUMS" -o "$tmpdir/SHA256SUMS"
+download_release_file "$base/$asset" "$tmpdir/$asset" 120 || fail "release download failed; existing installation preserved"
+download_release_file "$base/marzwatch-auto-update.sh" "$tmpdir/marzwatch-auto-update.sh" 60 || fail "release download failed; existing installation preserved"
+download_release_file "$base/SHA256SUMS" "$tmpdir/SHA256SUMS" 60 || fail "release download failed; existing installation preserved"
 
 verify_asset() {
   local name="$1" expected actual

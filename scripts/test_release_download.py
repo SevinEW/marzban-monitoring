@@ -38,7 +38,7 @@ class DownloadTests(unittest.TestCase):
         p=folder/'run.sh';p.write_bytes(script.encode())
         env=os.environ.copy();env['TRACE']=str(folder).replace('\\','/')
         env.update(extra or {})
-        return subprocess.run([BASH,str(p).replace('\\','/')],env=env,text=True,capture_output=True,timeout=15)
+        return subprocess.run([BASH,str(p).replace('\\','/')],env=env,text=True,encoding="utf-8",capture_output=True,timeout=15)
 
     def test_standalone_helpers_match(self):
         self.assertEqual(helper('install.sh'),helper('auto-update.sh'))

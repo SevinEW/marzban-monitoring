@@ -28,3 +28,10 @@ assert.equal([...nodes].sort((a,b)=>m.compareNodes(a,b,'country')).map(n=>n.id).
 assert(m.compareNodes({...nodes[0],name:'Node2'},{...nodes[0],name:'Node10'})<0);
 assert.equal(m.compareNodes(nodes[0],nodes[0]),0);
 console.log('PASS: volume default descending, RX+TX rate order, unavailable data last, deterministic ties');
+
+vm.runInContext('globalThis.presence={presenceValue,presenceDescription};',cx);
+for(const status of ['stale','partial','unavailable','source_changed'])assert.equal(cx.presence.presenceValue({users:999,status}).users,'—');
+assert.equal(cx.presence.presenceValue({users:0,status:'ok'}).users,'0');
+assert.equal(cx.presence.presenceValue({users:-1,status:'ok'}).users,'—');
+assert.equal(cx.presence.presenceValue({users:Infinity,status:'ok'}).users,'—');
+console.log('PASS: presence zero, invalid data, incomplete coverage and stale status');

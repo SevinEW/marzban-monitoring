@@ -31,7 +31,11 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
-	case "run":
+	case "presence-bind":
+ bindPresence()
+ case "presence-check":
+ checkPresence()
+ case "run":
 		run()
 	case "setup-central":
 		mustRoot()
@@ -59,7 +63,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Println("MarzWatch\n\nCommands:\n  run\n  setup-central\n  setup-agent\n  join-key\n  fleet-update\n  location NODE_NAME COUNTRY_CODE [CITY]\n  doctor\n  uninstall")
+	fmt.Println("MarzWatch\n\nCommands:\n  run\n  setup-central\n  setup-agent\n  join-key\n  fleet-update\n  location NODE_NAME COUNTRY_CODE [CITY]\n  presence-bind --help\n  presence-check --help\n  doctor\n  uninstall")
 }
 
 func run() {

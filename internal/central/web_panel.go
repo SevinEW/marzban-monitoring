@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sync"
 	"time"
+"github.com/SevinEW/marzban-monitoring/internal/presence"
 )
 
 //go:embed web/*
@@ -17,6 +18,7 @@ var webAssets embed.FS
 
 // Explicit DTO: never serialize model.Node (contains registration secrets).
 type webNode struct {
+ Presence presence.View `json:"presence"`
 	ID               string  `json:"id"`
 	Name             string  `json:"name"`
 	Country          string  `json:"country"`
@@ -41,6 +43,7 @@ type webNode struct {
 	TrafficAvailable bool    `json:"traffic_available"`
 }
 type webFrame struct {
+ Presence presence.Summary `json:"presence"`
 	Time  int64     `json:"time"`
 	Nodes []webNode `json:"nodes"`
 }
@@ -54,7 +57,11 @@ type webHub struct {
 
 func (s *Server) webSnapshot(now time.Time) webFrame {
 	f := webFrame{Time: now.UnixMilli(), Nodes: []webNode{}}
-	for _, n := range sortedForumNodes(s.store.Nodes()) {
+	nodes:=sortedForumNodes(s.store.Nodes())
+ ids:=make([]string,0,len(nodes));for _,n:=range nodes{ids=append(ids,n.ID)}
+ registry:=s.presence;if registry==nil{registry=presence.NewRegistry()}
+ views,summary:=registry.Snapshot(ids,now);f.Presence=summary
+ for _, n := range nodes {
 		m := n.Latest
 		w := webNode{ID: n.ID, Name: n.Name, Country: n.Location.Country, Code: n.Location.CountryCode, City: n.Location.City, IP: n.Location.PublicIP, OS: n.OS, Cores: n.Cores, CPU: m.CPUPercent, Load: m.Load1, RAM: m.MemUsed, RAMTotal: m.MemTotal, Disk: m.DiskUsed, DiskTotal: m.DiskTotal, RX: m.RXBps, TX: m.TXBps, Uptime: m.UptimeSeconds, Seen: n.LastSeen.UnixMilli(), Status: "online"}
 		age := now.Sub(n.LastSeen)
@@ -74,7 +81,8 @@ func (s *Server) webSnapshot(now time.Time) webFrame {
 			w.Traffic, w.Complete = hostSum(p, float64(now.UnixNano())/1e9)
 			s.host.mu.Unlock()
 		}
-		f.Nodes = append(f.Nodes, w)
+		w.Presence=views[n.ID]
+ f.Nodes = append(f.Nodes, w)
 	}
 	return f
 }

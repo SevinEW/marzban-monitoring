@@ -1,7 +1,10 @@
 import copy
+import os
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 import recover_pasarguard_presence as r
+from presence_source import minimal_source,source_slot
 
 
 class RecoveryTest(unittest.TestCase):
@@ -59,6 +62,37 @@ class RecoveryTest(unittest.TestCase):
             with self.assertRaises(r.Unverified):
                 r.discover_api(self.binding, 'boot-b', {'pid': 43, 'start_ticks': '1'}, Mock(),
                                {('127.0.0.1', 1234), ('127.0.0.1', 5678)}, set())
+
+    def test_remote_plan_never_exports_account_or_tls_secrets(self):
+        source=copy.deepcopy(self.source)
+        source['candidates']=[1,2,3,4,5,6]
+        source['config']['inbounds'][0]['settings']['clients']=[{'level':0,'id':'private-client-uuid','email':'private-email'}]
+        source['config']['inbounds'][0]['streamSettings']['tlsSettings']={'privateKey':'private-key'}
+        source['config']['outbounds']=[{'password':'private-password'}]
+        source['other_secret']='private-token'
+        result=minimal_source(source,'probe')
+        self.assertNotIn('private-',str(result))
+        self.assertEqual(result['candidates'],[1,2,3,4,5])
+        self.assertEqual(r.validate_policy(result,self.profile)['port'],208)
+
+    def test_remote_source_uses_pinned_host_and_no_shell_command(self):
+        profile=dict(self.profile,panel_ssh={'host':'192.0.2.2','identity_file':'/etc/marzwatch/key','known_hosts_file':'/etc/marzwatch/known_hosts'})
+        with patch.object(r,'run',return_value='{}') as run:
+            r.read_source(profile)
+        args=run.call_args.args[0]
+        self.assertIn('StrictHostKeyChecking=yes',args)
+        self.assertIn('BatchMode=yes',args)
+        self.assertEqual(args[-1],'root@192.0.2.2')
+        self.assertEqual(r.probe_destination(dict(profile,probe_destination='192.0.2.2')),'192.0.2.2')
+        with self.assertRaises(r.Unverified):r.probe_destination(dict(profile,probe_destination='192.0.2.3'))
+
+    @unittest.skipUnless(os.name=='posix','Linux source concurrency guard')
+    def test_fleet_reboot_limits_concurrent_source_reads(self):
+        with tempfile.TemporaryDirectory() as d:
+            with source_slot(d):
+                with source_slot(d):
+                    with self.assertRaises(r.Unverified):source_slot(d)
+                with source_slot(d):pass
 
 
 if __name__ == '__main__': unittest.main()

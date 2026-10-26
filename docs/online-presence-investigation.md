@@ -181,6 +181,56 @@ core changes and supports manual attestation. Keep a private binding backup befo
 deployment. Do not paste bindings, account responses or configuration contents in
 logs. The helper logs only controlled result codes and the non-secret process ID.
 
+### Agent nodes without a local panel
+
+An opted-in agent can use `panel_ssh` instead of `panel_container`. Generate a
+dedicated Ed25519 key **on that node**, leave its private key root-only there, and
+authorize only its public key on Central with OpenSSH `restrict` and this fixed
+forced command (substitute the verified node ID):
+
+```text
+restrict,command="/usr/bin/timeout 12 /usr/bin/python3 /usr/local/lib/marzwatch/presence_source.py 549" ssh-ed25519 PUBLIC_KEY
+```
+
+Install `presence_source.py` alongside the recovery module on Central. Its
+root-only `/etc/marzwatch/presence-sources.json` maps the authorized numeric node
+ID to `panel_container` and `probe_inbound`. It reads only that node, exports a
+minimal policy/inbound recipe, at most five numeric candidate account IDs and
+the shared private collector namespace. It never exports account credentials,
+client UUIDs, TLS keys or the full core configuration. Arbitrary SSH commands are
+rejected, and the key permits no shell, PTY or forwarding. Pin Central's existing
+host key using an independently authenticated connection; never use accept-any
+host verification. At most two source reads can enter the panel concurrently,
+including after a fleet reboot. Busy callers retry using the existing backoff.
+
+The agent recovery profile adds:
+
+```json
+{
+  "panel_ssh": {
+    "host": "CENTRAL_IPV4",
+    "identity_file": "/etc/marzwatch/presence-source-key",
+    "known_hosts_file": "/etc/marzwatch/presence-source-known-hosts"
+  },
+  "probe_destination": "CENTRAL_IPV4",
+  "https_host": "CENTRAL_HTTPS_CERTIFICATE_NAME"
+}
+```
+
+The ordinary fields still pin the exact agent container, executable, node identity
+and approved core configuration. The short test flow terminates at Central's
+existing port 443 with normal TLS certificate validation. Other external test
+destinations are rejected. The agent asks for the current minimal source only
+when recovering; there is no steady-state SSH or database polling. Initial
+enrollment uses `--initialize --verify`: no binding file is published until the
+fresh policy, API socket ownership and real existing-account flow all pass.
+Subsequent timer runs need no flags. A failed proof keeps data unavailable.
+
+Activation on Hetzner1 was validated with the installed Xray 26.10.21: one
+previously offline existing account appeared exactly once with one flow and four
+flows, and disappeared after closing them. No database user was created. The
+source-key test also verified that an arbitrary remote command was refused.
+
 Use one shared random namespace for all nodes of the same PasarGuard instance;
 never reuse it across unrelated panels. Existing installations are inert until
 bound. The binding command does not enable the Xray policy or restart the core.

@@ -211,20 +211,26 @@ def exact(sock, size):
     return data
 
 
+def online_names(exe, api):
+    result = json.loads(run([exe, 'api', 'statsgetallonlineusers', '--server='+api], timeout=3))
+    names = result.get('users', [])
+    require(isinstance(names, list) and all(isinstance(x, str) for x in names), 'invalid_online_response')
+    return set(names)
+
+
 def prove_tracking(exe, binding, source, inbound, profile):
     api = binding['cores'][0]['address']
     user = None
+    before = online_names(exe, api)
     for uid in source['candidates']:
+        if 'user>>>'+str(uid)+'>>>online' in before:
+            continue
         try:
             obj = json.loads(run([exe, 'api', 'inbounduser', '--server='+api,
                                   '-tag='+inbound['tag'], '-email='+str(uid)], timeout=3))
         except (Unverified, subprocess.TimeoutExpired):
             continue
         if obj.get('users'):
-            baseline = json.loads(run([exe, 'api', 'statsonline', '--server='+api,
-                                       '-email='+str(uid)], timeout=3))
-            if int(baseline.get('stat', {}).get('value', 0)) != 0:
-                continue
             user = obj['users'][0]
             require(user.get('email') == str(uid) and user.get('level', 0) == 0,
                     'probe_account_mismatch')
@@ -262,9 +268,7 @@ def prove_tracking(exe, binding, source, inbound, profile):
         flow = ssl.create_default_context().wrap_socket(flow, server_hostname=profile['https_host'])
         # Unlike an empty bulk response, a live tracked flow proves that the
         # running core has online tracking enabled. Raw account IDs never leave.
-        tracked = json.loads(run([exe, 'api', 'statsonline', '--server='+api,
-                                  '-email='+user['email']], timeout=3))
-        require(int(tracked.get('stat', {}).get('value', 0)) > 0, 'runtime_tracking_unverified')
+        require('user>>>'+user['email']+'>>>online' in online_names(exe, api), 'runtime_tracking_unverified')
     finally:
         if flow is not None: flow.close()
         if client is not None and client.poll() is None:
@@ -274,9 +278,7 @@ def prove_tracking(exe, binding, source, inbound, profile):
     # The probe used a previously offline account. Require its counter to clear,
     # too, so a static positive response cannot pass a runtime tracking proof.
     for _ in range(10):
-        cleared = json.loads(run([exe, 'api', 'statsonline', '--server='+api,
-                                  '-email='+user['email']], timeout=3))
-        if int(cleared.get('stat', {}).get('value', 0)) == 0:
+        if 'user>>>'+user['email']+'>>>online' not in online_names(exe, api):
             return
         time.sleep(.2)
     require(False, 'probe_account_did_not_clear')

@@ -124,6 +124,16 @@ def agent(cfg):
     LOCAL.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     now = time.time()
     local = json.loads(LOCAL.read_text()) if LOCAL.exists() else {}
+    if local.get('needs_report'):
+        try:
+            report = {k: local[k] for k in ['status', 'reason', 'inventory', 'proof'] if k in local}
+            exchange(cfg, json.loads(IDENTITY.read_text()), report)
+            local.pop('needs_report', None)
+            local['report_after'] = now+300
+            r.atomic_json(LOCAL, local)
+        except Exception:
+            # Status reporting cannot bypass the proof's five-minute backoff.
+            return
     binding = json.loads(r.BINDING.read_text()) if r.BINDING.exists() else None
     state = json.loads(r.STATE.read_text()) if r.STATE.exists() else {}
     boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
@@ -162,10 +172,12 @@ def agent(cfg):
                 r.atomic_json(r.BINDING, candidate, mode=0o640, gid=grp.getgrnam('marzwatch').gr_gid)
                 r.atomic_json(r.STATE, {'boot_id': boot, 'binding_digest': r.digest(candidate)})
             local.update(status='ready', reason='', retry_after=0, report_after=0,
+                         needs_report=True,
                          proof={'existing_account_flow': True, 'tls_verified': True,
                                 'vpn_restarted': False, 'pid': candidate['cores'][0]['pid']})
     except Exception as e:
-        local.update(status='unverified', reason=str(e) if isinstance(e, r.Unverified) else type(e).__name__)
+        local.update(status='unverified', needs_report=True,
+                     reason=str(e) if isinstance(e, r.Unverified) else type(e).__name__)
     r.atomic_json(LOCAL, local)
     print(json.dumps({k: local[k] for k in ['status', 'reason'] if k in local}))
 

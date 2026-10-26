@@ -8,6 +8,15 @@ from presence_source import minimal_source,source_slot
 
 
 class RecoveryTest(unittest.TestCase):
+    def test_never_connected_account_is_absent_not_a_failed_counter_lookup(self):
+        # Xray's per-account GetStatsOnline RPC errors if that counter has never
+        # existed. The bulk API represents this state accurately as an empty set.
+        with patch.object(r, 'run', return_value='{"users": []}') as run:
+            self.assertEqual(r.online_names('/proc/42/exe', '127.0.0.1:1234'), set())
+        self.assertEqual(run.call_args.args[0][2], 'statsgetallonlineusers')
+        with patch.object(r, 'run', return_value='{"users": "invalid"}'):
+            with self.assertRaises(r.Unverified): r.online_names('/proc/42/exe', '127.0.0.1:1234')
+
     def setUp(self):
         self.profile = dict(node_name='Master', node_address='192.0.2.1', core_config_id=5, probe_inbound='probe')
         self.source = dict(name='Master', address='192.0.2.1', core_id=5, config={

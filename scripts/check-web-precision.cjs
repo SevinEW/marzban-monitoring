@@ -59,6 +59,18 @@ vm.runInContext(renderer+';globalThis.renderPresence=renderPresence;',cx);
 let writes=0;const field=()=>({value:'',get textContent(){return this.value},set textContent(v){writes++;this.value=v}});
 const count=field(),coverage=field(),attrs={};
 const badge={dataset:{},title:'',querySelector:s=>s==='.presence-count'?count:coverage,getAttribute:k=>attrs[k],setAttribute:(k,v)=>attrs[k]=v};
+vm.runInContext('globalThis.scope={presenceForNode,presenceRows};',cx);
+const nonVPN={presence:{status:'not_applicable',users:null}};
+for(const live of [true,false]){
+ const p=cx.scope.presenceForNode(nonVPN,live);
+ cx.renderPresence(badge,p);
+ assert.equal(badge.hidden,true,'non-VPN badge shown on stream change');
+ assert.equal(cx.scope.presenceRows(p).length,0,'non-VPN detail exposes counter');
+ assert.equal(description(p),'');
+}
+cx.renderPresence(badge,{status:'unconfigured'});assert.equal(badge.hidden,false,'new VPN source stays hidden');
+assert.equal(cx.scope.presenceForNode({presence:{status:'ok',users:7}},false).status,'stale');
+assert.equal(cx.scope.presenceRows({status:'ok',users:7}).length,2);
 cx.renderPresence(badge,partial,true);assert.equal(count.textContent,'0');assert.equal(coverage.textContent,'1 از 17 سرور');
 assert.equal(badge.dataset.presence,'partial');const once=writes;
 cx.renderPresence(badge,partial,true);assert.equal(writes,once,'identical frame rewrites count');

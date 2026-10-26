@@ -17,6 +17,8 @@ import (
 const DefaultPath = "/etc/marzwatch/config.json"
 
 type Config struct {
+ // Nil preserves legacy inventory; an explicit list scopes presence to VPN nodes.
+ PresenceNodeIDs []string `json:"presence_node_ids"`
  WebListen string `json:"web_listen,omitempty"`
  TelegramDisabled bool `json:"telegram_disabled,omitempty"`
  LocationOverrides map[string]model.Location `json:"location_overrides,omitempty"`

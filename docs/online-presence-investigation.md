@@ -109,6 +109,15 @@ an empty response from a newly started, unconfigured core as zero.
 
 ## Opt-in restart recovery
 
+Central can set `presence_node_ids` to the verified monitor IDs of this panel's
+VPN nodes. An explicit empty list disables all presence counters; missing/null
+preserves the legacy all-host scope. Nodes outside the list keep their CPU,
+bandwidth and traffic cards, but have no online-user badge/detail rows and do not
+contribute to presence coverage or totals. An unavailable VPN source remains in
+coverage: lack of data must not silently become a complete total. Update this
+explicit inventory when enrolling or retiring VPN nodes; no periodic database
+query is added by this setting.
+
 A host reboot changes both Xray's PID and PasarGuard Node's randomly selected
 loopback stats port. A PID-only refresh is insufficient. New bindings also carry
 the Linux boot ID to prevent accidental PID/start-tick reuse across boots.

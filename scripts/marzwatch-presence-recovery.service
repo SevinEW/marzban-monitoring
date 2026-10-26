@@ -1,0 +1,22 @@
+[Unit]
+Description=Reverify the opted-in MarzWatch presence source after core changes
+After=docker.service marzwatch.service network-online.target
+ConditionPathExists=/etc/marzwatch/presence-recovery.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/marzwatch/recover_pasarguard_presence.py
+TimeoutStartSec=50
+Nice=15
+CPUQuota=20%
+MemoryMax=128M
+TasksMax=48
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=GOMAXPROCS=1
+Environment=GOMEMLIMIT=32MiB
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/marzwatch /var/lib/marzwatch-updater /run /tmp
+PrivateTmp=true
+

@@ -28,6 +28,7 @@ type Core struct {
 }
 type Binding struct {
 	Schema           int    `json:"schema"`
+	BootID           string `json:"boot_id,omitempty"`
 	Namespace        string `json:"namespace"`
 	TrackingVerified bool   `json:"tracking_verified"`
 	Cores            []Core `json:"cores"`
@@ -116,6 +117,16 @@ func ProcessStart(pid int) (string, error) {
 	}
 	return fields[19], nil
 }
+
+// PID and start ticks can be reused across host boots. New attestations also
+// identify the boot; legacy bindings remain supported until explicitly rebound.
+func BootID() string {
+	b, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
 func ValidateBinding(c Binding) error {
 	if c.Schema != 1 || len(c.Namespace) < 16 || len(c.Namespace) > 128 || !c.TrackingVerified || len(c.Cores) == 0 || len(c.Cores) > 4 {
 		return errors.New("unverified source")
@@ -183,6 +194,10 @@ func (c *Collector) Sample(ctx context.Context) Sample {
 	c.reload(time.Now())
 	result := Sample{Status: c.state, Generation: c.generation}
 	if c.state != "ok" {
+		return result
+	}
+	if c.binding.BootID != "" && c.binding.BootID != BootID() {
+		result.Status = "source_changed"
 		return result
 	}
 	all := map[string]struct{}{}

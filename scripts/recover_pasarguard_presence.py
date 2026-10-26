@@ -141,8 +141,32 @@ def validate_policy(source, profile):
     return i
 
 
+def read_source(profile):
+    peer = profile.get('panel_ssh')
+    if peer:
+        # This dedicated key is restricted by Central's authorized_keys to one
+        # read-only source command for this exact node. No remote shell is used.
+        host = str(ipaddress.IPv4Address(peer['host']))
+        return json.loads(run(['ssh', '-F', '/dev/null', '-n', '-T',
+                               '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4',
+                               '-o', 'StrictHostKeyChecking=yes', '-o', 'IdentitiesOnly=yes',
+                               '-o', 'UserKnownHostsFile='+peer['known_hosts_file'],
+                               '-i', peer['identity_file'], 'root@'+host], timeout=14))
+    return json.loads(run(['docker', 'exec', '-i', profile['panel_container'], '/code/.venv/bin/python', '-c', PANEL_READ],
+                          timeout=10, input=json.dumps({'node_id': profile['node_id']})))
+
+
+def probe_destination(profile):
+    target = str(ipaddress.IPv4Address(profile.get('probe_destination', profile['node_address'])))
+    require(target == profile['node_address'] or target == profile.get('panel_ssh', {}).get('host'),
+            'probe_destination_not_authorized')
+    return target
+
+
 def candidate_binding(old, boot, proc, address):
-    require(old.get('schema') == 1 and old.get('tracking_verified') is True
+    # A bootstrap may be explicitly unverified: only the runtime proof below
+    # can turn it into a binding accepted by the collector.
+    require(old.get('schema') == 1
             and 16 <= len(old.get('namespace', '')) <= 128 and len(old.get('cores', [])) == 1,
             'pilot_binding_missing')
     return dict(schema=1, boot_id=boot, namespace=old['namespace'], tracking_verified=True,
@@ -212,7 +236,7 @@ def prove_tracking(exe, binding, source, inbound, profile):
         flow.settimeout(3)
         flow.sendall(b'\x05\x01\x00')
         require(exact(flow, 2) == b'\x05\x00', 'probe_handshake_failed')
-        flow.sendall(b'\x05\x01\x00\x01'+socket.inet_aton(profile['node_address'])+(443).to_bytes(2, 'big'))
+        flow.sendall(b'\x05\x01\x00\x01'+socket.inet_aton(probe_destination(profile))+(443).to_bytes(2, 'big'))
         reply = exact(flow, 4)
         require(reply[:2] == b'\x05\x00' and reply[3] in [1, 4], 'probe_destination_failed')
         exact(flow, 6 if reply[3] == 1 else 18)
@@ -244,16 +268,21 @@ def recover(profile, binding, boot):
         require(hashlib.file_digest(f, 'sha256').hexdigest() == profile['xray_sha256'], 'core_version_changed')
     # Execute inside the existing image only after a process change. No steady
     # state panel imports, database connections or Docker calls are made.
-    source = json.loads(run(['docker', 'exec', '-i', profile['panel_container'], '/code/.venv/bin/python', '-c', PANEL_READ],
-                            timeout=10, input=json.dumps({'node_id': profile['node_id']})))
+    source = read_source(profile)
+    if profile.get('panel_ssh'):
+        namespace = source.get('namespace')
+        require(isinstance(namespace, str) and 16 <= len(namespace) <= 128, 'invalid_source_namespace')
+        binding = dict(binding, namespace=namespace)
     inbound = validate_policy(source, profile)
     owned = listeners(proc['pid'])
     require(any((host, inbound['port']) in owned for host in ['0.0.0.0', '127.0.0.1', '::']),
             'probe_socket_owner_mismatch')
-    # The TLS destination must be a local address, not a remote traffic probe.
+    # The node identity must be local. TLS testing terminates either locally or
+    # at the explicitly configured Central, never an arbitrary external site.
     addresses = json.loads(run(['ip', '-j', '-4', 'addr', 'show']))
     require(profile['node_address'] in {a['local'] for i in addresses for a in i.get('addr_info', [])},
             'probe_destination_not_local')
+    probe_destination(profile)
     excluded = {i['port'] for i in source['config'].get('inbounds', []) if isinstance(i.get('port'), int)}
     with tempfile.TemporaryDirectory(prefix='marzwatch-presence-recovery-') as tmp:
         candidate = discover_api(binding, boot, proc, Path(tmp)/'binding.json', owned, excluded)
@@ -272,12 +301,15 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--profile', default='/etc/marzwatch/presence-recovery.json')
     p.add_argument('--verify', action='store_true', help='repeat runtime proof, even if already bound')
+    p.add_argument('--initialize', action='store_true', help='create a first binding only after a successful runtime proof')
     args = p.parse_args()
     require(os.geteuid() == 0, 'root_required')
     profile_path = Path(args.profile)
     require(profile_path.stat().st_uid == 0 and profile_path.stat().st_mode & 0o022 == 0, 'unsafe_profile')
     profile = json.loads(profile_path.read_text())
-    binding = json.loads(BINDING.read_text())
+    original = BINDING.read_bytes() if BINDING.exists() else None
+    require(original is not None or (args.initialize and profile.get('panel_ssh')), 'binding_missing')
+    binding = json.loads(original) if original is not None else {'schema': 1, 'namespace': '', 'cores': [{}]}
     boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
     STATE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with open('/run/marzwatch-presence-recovery.lock', 'w') as lock:
@@ -291,9 +323,8 @@ def main():
         # At most one expensive retry per five minutes, even if a dependency is
         # down or this process is killed mid-proof. Normal checks never write.
         atomic_json(STATE, {'boot_id': boot, 'retry_after': time.time()+300})
-        before = digest(binding)
         candidate = recover(profile, binding, boot)
-        require(digest(json.loads(BINDING.read_text())) == before, 'binding_changed_concurrently')
+        require((BINDING.read_bytes() if BINDING.exists() else None) == original, 'binding_changed_concurrently')
         atomic_json(BINDING, candidate, mode=0o640, gid=grp.getgrnam('marzwatch').gr_gid)
         atomic_json(STATE, {'boot_id': boot, 'binding_digest': digest(candidate)})
         print(json.dumps({'status': 'rebound', 'pid': candidate['cores'][0]['pid'], 'vpn_restarted': False}))

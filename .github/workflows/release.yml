@@ -51,6 +51,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_online_presence.py
           python3 -m unittest discover -s scripts -p test_presence_recovery.py
           python3 -m unittest discover -s scripts -p test_presence_fleet.py
+          python3 -m unittest discover -s scripts -p test_presence_auto.py
           python3 scripts/test_release_download.py
           go test -race ./...
           go vet ./...
@@ -78,6 +79,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Add explicitly approved fleet presence enrollment over existing authenticated monitoring links, with embedded helpers, pinned TLS, bounded resource use, per-node runtime proofs and automatic recovery. No SSH to agents is required. Enrollment never restarts Xray or changes VPN policy; enable online tracking separately through the panel. Counts represent online accounts, not physical devices.' \
+            --notes 'Automatically enroll uniquely matched PasarGuard and monitoring nodes over authenticated links. Opt-in Central policy can enable online tracking with one guarded restart of a new node, preserving shared configurations and existing nodes. Bounded read-only snapshots, runtime traffic proofs, durable activation journal, rollback and dynamic dashboard coverage. Counts represent online accounts, not physical devices.' \
             --latest \
             --target "${GITHUB_SHA}"

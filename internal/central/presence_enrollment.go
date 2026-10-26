@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ type enrollmentReport struct {
 	Inventory json.RawMessage `json:"inventory,omitempty"`
 	Proof     json.RawMessage `json:"proof,omitempty"`
 	Received  int64           `json:"received"`
+	PeerIP    string          `json:"peer_ip,omitempty"`
 }
 type enrollmentPlanFile struct {
 	Expires int64                      `json:"expires"`
@@ -52,7 +54,7 @@ func (s *Server) enrollment(w http.ResponseWriter, r *http.Request, plansPath, r
 			allowed = true
 		}
 	}
-	if !allowed {
+	if !allowed && !s.cfg.PresenceAutoEnroll {
 		http.Error(w, "not enrolled", 403)
 		return
 	}
@@ -80,7 +82,9 @@ func (s *Server) enrollment(w http.ResponseWriter, r *http.Request, plansPath, r
 		http.Error(w, "invalid report", 400)
 		return
 	}
-	// One small latest-status file per authenticated, allowlisted node. No history
+	// Auto discovery accepts authenticated active nodes but grants no plan until
+	// Central has independently matched that node to a connected PasarGuard node.
+	// One small latest-status file per authenticated node. No history
 	// or identities are persisted. Rate limiting also bounds authenticated replays.
 	s.enrollmentMu.Lock()
 	defer s.enrollmentMu.Unlock()
@@ -93,6 +97,7 @@ func (s *Server) enrollment(w http.ResponseWriter, r *http.Request, plansPath, r
 	}
 	s.enrollmentSeen[id] = time.Now()
 	report.Received = time.Now().Unix()
+	report.PeerIP, _, _ = net.SplitHostPort(r.RemoteAddr)
 	if err = os.MkdirAll(reportsPath, 0700); err != nil {
 		http.Error(w, "storage unavailable", 503)
 		return

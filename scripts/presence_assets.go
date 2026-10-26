@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed recover_pasarguard_presence.py presence_source.py presence_fleet.py
+//go:embed recover_pasarguard_presence.py presence_source.py presence_fleet.py presence_auto.py presence_panel.py
 var presenceAssets embed.FS
 
 // Install only fixed, release-embedded files. Receiving a plan can never install
@@ -47,7 +47,7 @@ After=network-online.target docker.service
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /usr/local/lib/marzwatch/presence_fleet.py
-TimeoutStartSec=60
+TimeoutStartSec=90
 Nice=15
 CPUQuota=20%
 MemoryMax=128M

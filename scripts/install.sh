@@ -444,6 +444,9 @@ fresh_install() {
   fi
 
   printf "%b[07/07] 🤖 Enabling safe automatic updates...%b\n" "$C" "$N"
+  # The verified binary already carries enrollment. A later GitHub updater
+  # download failure must not prevent a newly registered node from enrolling.
+  "$BIN" presence-install
   bootstrap_auto_updater
 
   if [[ "$role" == "1" ]]; then

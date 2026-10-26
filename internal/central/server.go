@@ -40,6 +40,9 @@ type metricAlert struct {
 }
 
 type Server struct {
+ autoScopeMu sync.Mutex
+ autoScopeNext time.Time
+ autoScopeIDs map[string]bool
  enrollmentMu sync.Mutex
  enrollmentSeen map[string]time.Time
  presence *presence.Registry

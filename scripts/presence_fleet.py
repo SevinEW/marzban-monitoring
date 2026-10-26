@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Opt-in declarative enrollment through the authenticated monitoring link.
 
-No SSH to agents, remote commands, policy mutation, VPN restart or user creation.
-Central periodically refreshes an approved minimal plan with one read-only query.
+No SSH to agents, remote commands or user creation. Optional Central automation
+prepares a private core and may restart a newly matched node once when approved.
+Central periodically refreshes minimal plans with a bounded read-only snapshot.
 Agents execute release-embedded verification and publish only proven bindings.
 """
 import hashlib
@@ -211,6 +212,11 @@ def refresh(force=False):
     r.require(len(entries) <= 100, 'too_many_enrolled_nodes')
     sources = json.loads(r.run(['docker', 'exec', '-i', cfg['panel_container'], '/code/.venv/bin/python', '-c', FLEET_READ],
                               timeout=10, input=json.dumps({'ids': [p['node_id'] for p in entries.values()]})))
+    publish_plans(cfg, sources)
+
+
+def publish_plans(cfg, sources):
+    entries = cfg['nodes']
     namespace = root_json(r.BINDING)['namespace']
     expires = int(time.time())+660
     plans = {}
@@ -235,7 +241,12 @@ def main():
         try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError: return
         cfg = root_json(CONFIG)
-        if cfg['role'] == 'central': refresh('--refresh' in sys.argv)
+        if cfg['role'] == 'central':
+            if cfg.get('presence_auto_enroll') and FLEET.exists():
+                from presence_auto import tick
+                tick(cfg, '--refresh' in sys.argv)
+            else:
+                refresh('--refresh' in sys.argv)
         elif cfg['role'] == 'agent': agent(cfg)
 
 

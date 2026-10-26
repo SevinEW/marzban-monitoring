@@ -32,6 +32,10 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+ case "release-fetch":
+  mustRoot()
+  if len(os.Args)!=3 {log.Fatal("release-fetch DESTINATION")}
+  if err:=agent.FetchRelease(os.Args[2]);err!=nil {log.Fatal(err)}
  case "presence-install":
   mustRoot()
   if err:=presenceassets.InstallPresence();err!=nil {log.Fatal(err)}

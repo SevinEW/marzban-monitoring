@@ -81,7 +81,9 @@ command -v sha256sum >/dev/null || fail "sha256sum missing"
 command -v systemctl >/dev/null || fail "systemd missing"
 
 mkdir -p "$STAMP_DIR" "$BACKUP_DIR" "$UPDATER_DIR"
-chmod 0700 "$STAMP_DIR" "$BACKUP_DIR" "$UPDATER_DIR"
+chmod 0700 "$STAMP_DIR" "$BACKUP_DIR"
+chown root:marzwatch "$UPDATER_DIR"
+chmod 0750 "$UPDATER_DIR"
 
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$LOCK_FILE"
@@ -123,9 +125,13 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 log "checking verified release"
-download_release_file "$base/$asset" "$tmpdir/$asset" 120 || fail "release download failed; existing installation preserved"
-download_release_file "$base/marzwatch-auto-update.sh" "$tmpdir/marzwatch-auto-update.sh" 60 || fail "release download failed; existing installation preserved"
-download_release_file "$base/SHA256SUMS" "$tmpdir/SHA256SUMS" 60 || fail "release download failed; existing installation preserved"
+if ! download_release_file "$base/$asset" "$tmpdir/$asset" 120 \
+ || ! download_release_file "$base/marzwatch-auto-update.sh" "$tmpdir/marzwatch-auto-update.sh" 60 \
+ || ! download_release_file "$base/SHA256SUMS" "$tmpdir/SHA256SUMS" 60; then
+  log "trying authenticated Central release cache"
+  [[ "$VERSION" == latest ]] && "$BIN" release-fetch "$tmpdir" \
+    || fail "release download failed; existing installation preserved"
+fi
 
 verify_asset() {
   local name="$1" expected actual
@@ -289,13 +295,32 @@ if [[ $binary_changed -eq 1 || $unit_changed -eq 1 ]]; then
       systemctl restart marzwatch || true
       exit 1
     fi
-    if [[ $binary_changed -eq 1 ]]; then
-      "$CTL" fleet-update >/dev/null 2>&1 || true
-      log "fleet update signal sent to nodes"
-    fi
   fi
 fi
 
 rm -f "$REQUEST"
 "$BIN" presence-install >/dev/null 2>&1 || log "presence helper installation pending"
+role="$(grep -oE '"role"[[:space:]]*:[[:space:]]*"(central|agent)"' "$CONFIG" | head -n1 | sed -E 's/.*"(central|agent)"/\1/' || true)"
+if [[ "$role" == central ]]; then
+  # Publish only verified assets after health checks, before notifying agents.
+  cache="$UPDATER_DIR/release-cache"
+  mkdir -p "$cache/$new_sha"
+  chown root:marzwatch "$UPDATER_DIR" "$cache" "$cache/$new_sha"
+  chmod 0750 "$UPDATER_DIR" "$cache" "$cache/$new_sha"
+  for name in "$asset" marzwatch-auto-update.sh SHA256SUMS; do
+    install -o root -g marzwatch -m 0640 "$tmpdir/$name" "$cache/$new_sha/$name"
+  done
+  ln -sfn "$new_sha" "$cache/current.new"
+  mv -Tf "$cache/current.new" "$cache/current"
+  find "$cache" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr \
+    | awk 'NR>3 {$1=""; sub(/^ /,""); print}' \
+    | while IFS= read -r old; do
+        leaf="${old##*/}"
+        [[ "$leaf" =~ ^[0-9a-f]{64}$ && "$leaf" != "$new_sha" ]] && rm -rf -- "$old" || true
+      done
+  if [[ $binary_changed -eq 1 ]]; then
+    "$CTL" fleet-update >/dev/null 2>&1 || true
+    log "fleet update signal sent to nodes"
+  fi
+fi
 log "up to date • binary ${new_sha:0:12}"

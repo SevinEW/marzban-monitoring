@@ -5,6 +5,14 @@ MarzWatch release. It enables a bounded oneshot timer; it does not execute code
 received from Central. An older updater bootstraps the helpers on its next timer
 run after downloading the new updater. New installs get the same behavior.
 
+If GitHub downloads fail, an updated agent can fetch the verified release bundle
+from Central over its existing pinned TLS connection and node identity. Central
+caches its architecture's verified binary, updater and checksum manifest after a
+successful update, retaining at most three bundles. Only those fixed asset names
+are served. The agent verifies the entire bundle before publishing any input to
+the installer; checksum failures leave the installation unchanged. This fallback
+requires a one-time upgrade from legacy agents that only know GitHub downloads.
+
 Agents use their existing per-node identity and pinned Central TLS certificate.
 The `presence-enroll-v1` authentication domain is separate from metrics/presence.
 Central accepts only active IDs explicitly present in `presence_node_ids`, returns

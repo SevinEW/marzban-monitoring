@@ -92,6 +92,10 @@ if [[ -f "$REQUEST" ]]; then
   FORCE=1
 fi
 
+# Also bootstrap a release installed by an older updater before its hourly gate.
+# Fixed embedded helpers are inert until Central explicitly enrolls this node.
+"$BIN" presence-install >/dev/null 2>&1 || true
+
 if [[ $FORCE -eq 0 && -f "$LAST_CHECK" ]]; then
   now="$(date +%s)"
   last="$(stat -c %Y "$LAST_CHECK" 2>/dev/null || echo 0)"
@@ -293,4 +297,5 @@ if [[ $binary_changed -eq 1 || $unit_changed -eq 1 ]]; then
 fi
 
 rm -f "$REQUEST"
+"$BIN" presence-install >/dev/null 2>&1 || log "presence helper installation pending"
 log "up to date • binary ${new_sha:0:12}"

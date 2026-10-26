@@ -40,6 +40,8 @@ type metricAlert struct {
 }
 
 type Server struct {
+ enrollmentMu sync.Mutex
+ enrollmentSeen map[string]time.Time
  presence *presence.Registry
 	cfg      config.Config
 	store    *storage.Store
@@ -78,6 +80,7 @@ func Run(cfg config.Config) error {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("POST /api/v1/register", s.register)
 	mux.HandleFunc("POST /api/v1/metrics", s.metrics)
+ mux.Handle("POST /api/v1/presence-enroll", concurrencyLimit(http.HandlerFunc(s.enrollPresence),2))
  mux.Handle("POST /api/v1/presence", concurrencyLimit(http.HandlerFunc(s.receivePresence),4))
 	h := &http.Server{Addr: cfg.Listen, Handler: recoverMW(concurrencyLimit(limitBody(mux, 64<<10), 32)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	log.Printf("MarzWatch central listening on %s", cfg.Listen)

@@ -50,6 +50,7 @@ jobs:
           python3 scripts/test_pg_meter.py
           python3 -m unittest discover -s scripts -p test_online_presence.py
           python3 -m unittest discover -s scripts -p test_presence_recovery.py
+          python3 -m unittest discover -s scripts -p test_presence_fleet.py
           python3 scripts/test_release_download.py
           go test -race ./...
           go vet ./...
@@ -77,6 +78,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Add lightweight, verified Xray account presence to the live panel. Collect one bulk snapshot per core, transmit changes over authenticated monitoring connections, deduplicate accounts across servers, and expose freshness and coverage. Physical-device counts remain unavailable for shared generic-client configurations. Activation is opt-in and never changes or restarts Xray automatically.' \
+            --notes 'Add explicitly approved fleet presence enrollment over existing authenticated monitoring links, with embedded helpers, pinned TLS, bounded resource use, per-node runtime proofs and automatic recovery. No SSH to agents is required. Enrollment never restarts Xray or changes VPN policy; enable online tracking separately through the panel. Counts represent online accounts, not physical devices.' \
             --latest \
             --target "${GITHUB_SHA}"

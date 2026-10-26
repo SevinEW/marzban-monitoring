@@ -68,24 +68,18 @@ collector-memory claims. A first attempt to assert removal after 200 ms failed;
 the bounded closure test observed removal around one second after closing the
 test sockets. Transport shutdown and network failure detection are not instant.
 
-## Work remaining before production
+## Activation requirements
 
-1. Verify the effective online policy for all user levels on each running core;
-   tie verification to core restart/config lifecycle so it cannot outlive changes.
-2. Enable tracking on a controlled node. The existing deployed core requires a
-   config reload/restart; do not interrupt current users to perform this silently.
-   Check shared core-config membership before editing any PasarGuard template.
-3. Add node-to-central authenticated aggregate/identity transport, namespace
-   mapping and global deduplication. Do not expose Xray's admin API publicly.
-4. Measure CPU, memory, RPC size and timing at real load, with bounded concurrency
-   and backoff. The two-user integration test is not a fleet benchmark.
-5. Wire truthful freshness/coverage into cards and top totals, then release and
-   verify the installed build. Do not publish a device number from this data.
+The integrated implementation below replaces the initial prototype. Production
+activation still requires verified `statsUserOnline` for every active user level
+on each running core. Existing cores need a config reload/restart to enable it;
+shared PasarGuard templates must not be modified without considering all affected
+nodes. A currently active core must not be silently restarted.
 
-Exact physical-device counting still requires a per-device identity participating
-in the connection lifecycle. IPs, transport flows and shareable credentials cannot
-establish that identity for existing generic clients. The requested device/user
-pair cannot be truthfully enabled using this account-only prototype.
+Exact physical-device counting requires a per-device identity participating in
+the connection lifecycle. IPs, transport flows and shareable credentials cannot
+establish that identity for existing generic clients. The device side of the
+requested device/user pair therefore stays unavailable.
 
 ## Integrated implementation
 

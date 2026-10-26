@@ -76,6 +76,6 @@ jobs:
             dist/marzwatch-auto-update.sh \
             dist/SHA256SUMS \
             --title 'MarzWatch Latest' \
-            --notes 'Introduce the dark Precision Observatory: timestamp-accurate bandwidth charts, CPU/RAM/disk gauges and history, local SVG country flags, custom icons, detailed server inspection, and explicit stale-data gaps. Preserve live collection, rolling 24-hour host traffic, authentication, and lightweight streaming.' \
+            --notes 'Add lightweight, verified Xray account presence to the live panel. Collect one bulk snapshot per core, transmit changes over authenticated monitoring connections, deduplicate accounts across servers, and expose freshness and coverage. Physical-device counts remain unavailable for shared generic-client configurations. Activation is opt-in and never changes or restarts Xray automatically.' \
             --latest \
             --target "${GITHUB_SHA}"

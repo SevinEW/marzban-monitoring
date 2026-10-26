@@ -44,8 +44,7 @@ type webNode struct {
 }
 type webFrame struct {
  Presence presence.Summary `json:"presence"`
-	Time  int64     `json:"time"
-"github.com/SevinEW/marzban-monitoring/internal/presence"`
+	Time  int64     `json:"time"`
 	Nodes []webNode `json:"nodes"`
 }
 type webHub struct {

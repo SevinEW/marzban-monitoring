@@ -57,3 +57,32 @@ func TestPresenceAuthenticatedAndPrivate(t *testing.T) {
 		t.Fatal("old timestamp accepted")
 	}
 }
+
+// Presence additions must preserve the live stream's existing clock and metrics.
+func TestPresenceFrameWireContract(t *testing.T) {
+	st, err := storage.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1800000000, 0)
+	st.UpsertNode(model.Node{ID: "node", Secret: "test-secret", LastSeen: now, Daily: map[string]model.DailyStats{}})
+	s := &Server{store: st, presence: presence.NewRegistry()}
+	raw, err := json.Marshal(s.webSnapshot(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]json.RawMessage
+	if json.Unmarshal(raw, &wire) != nil {
+		t.Fatal("invalid frame")
+	}
+	var stamp int64
+	if json.Unmarshal(wire["time"], &stamp) != nil || stamp != now.UnixMilli() {
+		t.Fatal("frame time lost")
+	}
+	if len(wire["presence"]) == 0 || len(wire["nodes"]) == 0 {
+		t.Fatal("incomplete frame")
+	}
+	if bytesbuf.Contains(raw, []byte("test-secret")) {
+		t.Fatal("secret leaked")
+	}
+}

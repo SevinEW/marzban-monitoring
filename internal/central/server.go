@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/SevinEW/marzban-monitoring/internal/collector"
+"github.com/SevinEW/marzban-monitoring/internal/presence"
 	"github.com/SevinEW/marzban-monitoring/internal/config"
 	"github.com/SevinEW/marzban-monitoring/internal/geo"
 	"github.com/SevinEW/marzban-monitoring/internal/model"
@@ -39,6 +40,7 @@ type metricAlert struct {
 }
 
 type Server struct {
+ presence *presence.Registry
 	cfg      config.Config
 	store    *storage.Store
 	bot      *telegram.Bot
@@ -58,7 +60,7 @@ func Run(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	s := &Server{cfg: cfg, store: st, bot: telegram.New(cfg.TelegramToken, cfg.AdminChatID), tz: tz, alerts: map[string]*alertTracker{}, stop: make(chan struct{})}
+	s := &Server{presence:presence.NewRegistry(),cfg: cfg, store: st, bot: telegram.New(cfg.TelegramToken, cfg.AdminChatID), tz: tz, alerts: map[string]*alertTracker{}, stop: make(chan struct{})}
 	fp, err := security.EnsureSelfSigned(certPath, keyPath, cfg.PublicIP)
 	if err != nil {
 		return err
@@ -66,6 +68,7 @@ func Run(cfg config.Config) error {
 	if err:=s.startWebPanel();err!=nil{return err}
  log.Printf("central TLS fingerprint: %s", fp)
 	go st.FlushLoop(s.stop, log.Printf)
+ go s.supervise("presence",s.localPresence)
 	go s.supervise("local-collector", s.localCollector)
 	go s.supervise("offline-loop", s.offlineLoop)
 	go s.supervise("report-loop", s.reportLoop)
@@ -75,6 +78,7 @@ func Run(cfg config.Config) error {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("POST /api/v1/register", s.register)
 	mux.HandleFunc("POST /api/v1/metrics", s.metrics)
+ mux.Handle("POST /api/v1/presence", concurrencyLimit(http.HandlerFunc(s.receivePresence),4))
 	h := &http.Server{Addr: cfg.Listen, Handler: recoverMW(concurrencyLimit(limitBody(mux, 64<<10), 32)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	log.Printf("MarzWatch central listening on %s", cfg.Listen)
 	return h.ListenAndServeTLS(certPath, keyPath)
@@ -839,7 +843,9 @@ func flagEmoji(cc string) string {
 
 func limitBody(next http.Handler, max int64) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, max)
+		limit:=max
+ if r.URL.Path=="/api/v1/presence" {limit=presence.MaxBody}
+ r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }

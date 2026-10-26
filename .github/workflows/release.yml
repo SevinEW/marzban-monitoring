@@ -22,7 +22,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.27.x'
 
       - name: Apply final build transforms
         run: |
@@ -48,6 +48,7 @@ jobs:
           node --check internal/central/web/app.js
           node scripts/check-web-precision.cjs
           python3 scripts/test_pg_meter.py
+          python3 -m unittest discover -s scripts -p test_online_presence.py
           python3 scripts/test_release_download.py
           go test -race ./...
           go vet ./...

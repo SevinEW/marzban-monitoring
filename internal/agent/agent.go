@@ -60,6 +60,7 @@ func Run(cfg config.Config) error {
 	}
 	go func() { a.publicIP.Store(geo.Detect().PublicIP) }()
 	go a.superviseCollector()
+	go a.presenceLoop()
 	return a.sendLoop()
 }
 

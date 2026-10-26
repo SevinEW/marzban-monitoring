@@ -31,7 +31,11 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
-	case "run":
+	case "presence-bind":
+ bindPresence()
+ case "presence-check":
+ checkPresence()
+ case "run":
 		run()
 	case "setup-central":
 		mustRoot()

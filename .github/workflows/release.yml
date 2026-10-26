@@ -49,6 +49,7 @@ jobs:
           node scripts/check-web-precision.cjs
           python3 scripts/test_pg_meter.py
           python3 -m unittest discover -s scripts -p test_online_presence.py
+          python3 -m unittest discover -s scripts -p test_presence_recovery.py
           python3 scripts/test_release_download.py
           go test -race ./...
           go vet ./...

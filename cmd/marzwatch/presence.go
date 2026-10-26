@@ -29,7 +29,11 @@ func bindPresence() {
 	if e != nil {
 		log.Fatal("Running core could not be verified")
 	}
-	binding := presence.Binding{Schema: 1, Namespace: *namespace, TrackingVerified: true, Cores: []presence.Core{{Address: *address, PID: *pid, StartTicks: start}}}
+	boot := presence.BootID()
+	if boot == "" {
+		log.Fatal("Host boot identity could not be verified")
+	}
+	binding := presence.Binding{Schema: 1, BootID: boot, Namespace: *namespace, TrackingVerified: true, Cores: []presence.Core{{Address: *address, PID: *pid, StartTicks: start}}}
 	if presence.ValidateBinding(binding) != nil {
 		log.Fatal("Invalid binding")
 	}

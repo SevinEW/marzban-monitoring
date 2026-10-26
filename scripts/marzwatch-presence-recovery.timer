@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the opted-in MarzWatch presence binding
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=30s
+AccuracySec=3s
+Unit=marzwatch-presence-recovery.service
+
+[Install]
+WantedBy=timers.target

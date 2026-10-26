@@ -96,8 +96,9 @@ count and request duration are bounded.
 Identifiers are pseudonymized with the shared panel namespace, kept in memory
 only, and never included in web frames or monitor state files. Stale or unverified
 sources cannot report zero. Global totals require full coverage. The UI displays
-`— (users)` because the physical device count remains unknown. Touch/click help
-and card details explain the meaning; network-stream failure clears visible counts.
+the observed account count with its source coverage when only part of the fleet
+is ready. Physical devices are not inferred. Touch/click help and card details
+explain the meaning; network-stream failure clears visible counts.
 
 A root-owned `/etc/marzwatch/presence.json` binds the source to an existing loopback
 API and the actual Xray PID/start ticks. `presence-bind` also verifies ownership of
@@ -105,6 +106,71 @@ the API socket. The operator must verify `statsUserOnline` for all active user
 levels before attesting. A core restart invalidates the binding; counts remain
 unavailable until reverified/rebound. This deliberately cannot silently reinterpret
 an empty response from a newly started, unconfigured core as zero.
+
+## Opt-in restart recovery
+
+A host reboot changes both Xray's PID and PasarGuard Node's randomly selected
+loopback stats port. A PID-only refresh is insufficient. New bindings also carry
+the Linux boot ID to prevent accidental PID/start-tick reuse across boots.
+
+`scripts/recover_pasarguard_presence.py` and the matching systemd service/timer
+provide an explicitly configured adapter for the already-enabled single-level
+PasarGuard pilot. They are **not installed or enabled by the fleet updater**.
+Install the script at `/usr/local/lib/marzwatch/recover_pasarguard_presence.py`
+and the service/timer in `/etc/systemd/system/` only on the opted-in host. Create
+a root-owned, mode-0600 `/etc/marzwatch/presence-recovery.json` containing:
+
+```json
+{
+  "node_name": "the exact opted-in node name",
+  "node_address": "the host's own IPv4 address",
+  "node_id": 0,
+  "core_config_id": 0,
+  "node_container": "the verified local node container",
+  "panel_container": "the local PasarGuard panel container",
+  "node_image_id": "sha256:the reviewed image digest",
+  "xray_sha256": "the reviewed running executable digest",
+  "probe_inbound": "an existing VLESS WebSocket inbound tag",
+  "https_host": "the existing local HTTPS endpoint's certificate name"
+}
+```
+
+These are deployment values, not defaults to copy literally. The adapter requires
+the existing node to run with host networking, the existing panel Python path
+`/code/.venv/bin/python`, level-zero online tracking, a plain WebSocket inbound,
+and valid TLS on this host's own port 443. It refuses unknown images, changed
+assignments, additional user levels or unsupported layouts. Re-attest software
+updates explicitly; an empty online RPC alone is never proof of tracking.
+
+Every 30 seconds the normal path reads only the local binding, boot ID, state and
+process start ticks. It does not open a database connection, run Docker commands
+or make a network request. When the generation changes, recovery:
+
+1. Verifies the exact container image, Xray executable and parent process.
+2. Reads this node's configuration and at most five candidate account IDs in a
+   read-only database transaction with a two-second statement deadline.
+3. Discovers the stats API among at most four loopback listeners owned by that
+   Xray process; configured client inbounds are excluded.
+4. Proves the running online policy with one existing account and a short local
+   VPN flow to the same host's verified HTTPS endpoint. A temporary client uses
+   one Go thread and a 32 MiB soft memory target and is always cleaned up.
+5. Rechecks process/socket ownership and atomically replaces only the monitor's
+   binding. It preserves the account namespace. Monitoring reloads automatically.
+
+No panel/core restart, SQL write, new account, policy edit or counter reset is
+performed. Failed recovery stays unavailable and retries no more than once per
+five minutes. The one-shot service caps its process group at 128 MiB and 20% of
+one CPU; it has no always-running Python daemon. The read-only panel query runs
+inside the existing panel container only during recovery. The lifecycle of the
+other fleet nodes is not changed.
+
+After installation, run the helper once with `--verify`, then enable
+`marzwatch-presence-recovery.timer`. Validate the live count, service result and
+unchanged Xray PID. Roll back the adapter with `systemctl disable --now
+marzwatch-presence-recovery.timer`; the collector still fails closed after future
+core changes and supports manual attestation. Keep a private binding backup before
+deployment. Do not paste bindings, account responses or configuration contents in
+logs. The helper logs only controlled result codes and the non-secret process ID.
 
 Use one shared random namespace for all nodes of the same PasarGuard instance;
 never reuse it across unrelated panels. Existing installations are inert until

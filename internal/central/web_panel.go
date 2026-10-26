@@ -58,7 +58,8 @@ type webHub struct {
 func (s *Server) webSnapshot(now time.Time) webFrame {
 	f := webFrame{Time: now.UnixMilli(), Nodes: []webNode{}}
 	nodes:=sortedForumNodes(s.store.Nodes())
- ids:=make([]string,0,len(nodes));for _,n:=range nodes{ids=append(ids,n.ID)}
+ eligible:=map[string]bool{};for _,id:=range s.cfg.PresenceNodeIDs{eligible[id]=true}
+ ids:=make([]string,0,len(nodes));for _,n:=range nodes{if s.cfg.PresenceNodeIDs==nil||eligible[n.ID]{ids=append(ids,n.ID)}}
  registry:=s.presence;if registry==nil{registry=presence.NewRegistry()}
  views,summary:=registry.Snapshot(ids,now);f.Presence=summary
  for _, n := range nodes {
@@ -81,7 +82,7 @@ func (s *Server) webSnapshot(now time.Time) webFrame {
 			w.Traffic, w.Complete = hostSum(p, float64(now.UnixNano())/1e9)
 			s.host.mu.Unlock()
 		}
-		w.Presence=views[n.ID]
+		if v,ok:=views[n.ID];ok{w.Presence=v}else{w.Presence=presence.View{Status:"not_applicable"}}
  f.Nodes = append(f.Nodes, w)
 	}
 	return f

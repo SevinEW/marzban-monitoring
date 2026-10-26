@@ -31,3 +31,5 @@
 .disconnected .presence-total,.disconnected .presence-mini{opacity:.6}.disconnected .presence-total>i,.disconnected .presence-mini>i{background:#9b8d79;box-shadow:none}
 @media(max-width:900px){.intro{flex-wrap:wrap;gap:24px}.presence-overview{margin-inline:auto 0}.presence-total{min-width:175px;min-height:72px;padding:10px 13px;gap:11px}}
 @media(max-width:640px){.presence-overview{order:3;width:100%;margin:0}.presence-total{width:100%;min-height:72px}.presence-count{font-size:28px}.presence-mini .presence-count{font-size:17px}}
+
+.presence-mini[hidden]{display:none}

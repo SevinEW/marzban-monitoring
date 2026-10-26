@@ -51,6 +51,15 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
+def file_digest(path):
+    # Ubuntu 22.04 ships Python 3.10, before hashlib.file_digest was added.
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1024*1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
 def still_bound(binding, state, boot, read_process=process):
     try:
         core, = binding['cores']
@@ -142,6 +151,8 @@ def validate_policy(source, profile):
 
 
 def read_source(profile):
+    if profile.get('monitor_transport'):
+        return profile['fleet_source']
     peer = profile.get('panel_ssh')
     if peer:
         # This dedicated key is restricted by Central's authorized_keys to one
@@ -158,7 +169,11 @@ def read_source(profile):
 
 def probe_destination(profile):
     target = str(ipaddress.IPv4Address(profile.get('probe_destination', profile['node_address'])))
-    require(target == profile['node_address'] or target == profile.get('panel_ssh', {}).get('host'),
+    transport_host = ''
+    if profile.get('monitor_transport'):
+        from presence_fleet import peer_host, root_json, CONFIG
+        transport_host = peer_host(root_json(CONFIG))[0]
+    require(target == profile['node_address'] or target == profile.get('panel_ssh', {}).get('host') or target == transport_host,
             'probe_destination_not_authorized')
     return target
 
@@ -206,6 +221,10 @@ def prove_tracking(exe, binding, source, inbound, profile):
         except (Unverified, subprocess.TimeoutExpired):
             continue
         if obj.get('users'):
+            baseline = json.loads(run([exe, 'api', 'statsonline', '--server='+api,
+                                       '-email='+str(uid)], timeout=3))
+            if int(baseline.get('stat', {}).get('value', 0)) != 0:
+                continue
             user = obj['users'][0]
             require(user.get('email') == str(uid) and user.get('level', 0) == 0,
                     'probe_account_mismatch')
@@ -252,6 +271,15 @@ def prove_tracking(exe, binding, source, inbound, profile):
             client.terminate()
             try: client.wait(timeout=2)
             except subprocess.TimeoutExpired: client.kill(); client.wait(timeout=2)
+    # The probe used a previously offline account. Require its counter to clear,
+    # too, so a static positive response cannot pass a runtime tracking proof.
+    for _ in range(10):
+        cleared = json.loads(run([exe, 'api', 'statsonline', '--server='+api,
+                                  '-email='+user['email']], timeout=3))
+        if int(cleared.get('stat', {}).get('value', 0)) == 0:
+            return
+        time.sleep(.2)
+    require(False, 'probe_account_did_not_clear')
 
 
 def recover(profile, binding, boot):
@@ -264,12 +292,11 @@ def recover(profile, binding, boot):
     proc = process(pids[0])
     require(proc['parent'] == info['State']['Pid'], 'core_parent_changed')
     exe = '/proc/'+str(proc['pid'])+'/exe'
-    with open(exe, 'rb') as f:
-        require(hashlib.file_digest(f, 'sha256').hexdigest() == profile['xray_sha256'], 'core_version_changed')
+    require(file_digest(exe) == profile['xray_sha256'], 'core_version_changed')
     # Execute inside the existing image only after a process change. No steady
     # state panel imports, database connections or Docker calls are made.
     source = read_source(profile)
-    if profile.get('panel_ssh'):
+    if profile.get('panel_ssh') or profile.get('monitor_transport'):
         namespace = source.get('namespace')
         require(isinstance(namespace, str) and 16 <= len(namespace) <= 128, 'invalid_source_namespace')
         binding = dict(binding, namespace=namespace)

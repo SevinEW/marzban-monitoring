@@ -19,6 +19,7 @@ import (
 	"github.com/SevinEW/marzban-monitoring/internal/config"
 	"github.com/SevinEW/marzban-monitoring/internal/geo"
 	"github.com/SevinEW/marzban-monitoring/internal/security"
+ presenceassets "github.com/SevinEW/marzban-monitoring/scripts"
 )
 
 const centralPort = "28443"
@@ -31,6 +32,9 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+ case "presence-install":
+  mustRoot()
+  if err:=presenceassets.InstallPresence();err!=nil {log.Fatal(err)}
 	case "presence-bind":
  bindPresence()
  case "presence-check":

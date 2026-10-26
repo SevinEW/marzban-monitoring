@@ -51,6 +51,15 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
+def file_digest(path):
+    # Ubuntu 22.04 ships Python 3.10, before hashlib.file_digest was added.
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1024*1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
 def still_bound(binding, state, boot, read_process=process):
     try:
         core, = binding['cores']
@@ -283,8 +292,7 @@ def recover(profile, binding, boot):
     proc = process(pids[0])
     require(proc['parent'] == info['State']['Pid'], 'core_parent_changed')
     exe = '/proc/'+str(proc['pid'])+'/exe'
-    with open(exe, 'rb') as f:
-        require(hashlib.file_digest(f, 'sha256').hexdigest() == profile['xray_sha256'], 'core_version_changed')
+    require(file_digest(exe) == profile['xray_sha256'], 'core_version_changed')
     # Execute inside the existing image only after a process change. No steady
     # state panel imports, database connections or Docker calls are made.
     source = read_source(profile)

@@ -1,7 +1,7 @@
 package central
 
 import (
-	"bytes"
+	bytesbuf "bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -34,7 +34,7 @@ func TestEnrollmentIsScopedAuthenticatedAndNeverReturnsOtherPlans(t *testing.T) 
 	call := func(id, domain string, stamp int64) *httptest.ResponseRecorder {
 		body := []byte(`{"status":"discovered"}`)
 		ts := strconv.FormatInt(stamp, 10)
-		req := httptest.NewRequest("POST", "/api/v1/presence-enroll", bytes.NewReader(body))
+		req := httptest.NewRequest("POST", "/api/v1/presence-enroll", bytesbuf.NewReader(body))
 		req.Header.Set("X-MW-Node", id)
 		req.Header.Set("X-MW-Time", ts)
 		m := hmac.New(sha256.New, []byte("secret-"+id))
@@ -56,7 +56,7 @@ func TestEnrollmentIsScopedAuthenticatedAndNeverReturnsOtherPlans(t *testing.T) 
 		t.Fatal("non VPN node enrolled")
 	}
 	w := call("a", "presence-enroll-v1\n", now)
-	if w.Code != 200 || bytes.Contains(w.Body.Bytes(), []byte("only-b")) || !bytes.Contains(w.Body.Bytes(), []byte("only-a")) {
+	if w.Code != 200 || bytesbuf.Contains(w.Body.Bytes(), []byte("only-b")) || !bytesbuf.Contains(w.Body.Bytes(), []byte("only-a")) {
 		t.Fatalf("plan isolation: %d %s", w.Code, w.Body.String())
 	}
 	if w = call("a", "presence-enroll-v1\n", now); w.Code != 429 {

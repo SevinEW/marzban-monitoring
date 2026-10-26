@@ -89,8 +89,7 @@ def inventory():
             continue
         proc = r.process(pids[0])
         r.require(proc['parent'] == info['State']['Pid'], 'core_parent_changed')
-        with open('/proc/'+str(proc['pid'])+'/exe', 'rb') as f:
-            sha = hashlib.file_digest(f, 'sha256').hexdigest()
+        sha = r.file_digest('/proc/'+str(proc['pid'])+'/exe')
         candidates.append(dict(node_container=info['Name'].lstrip('/'), node_image_id=info['Image'],
                                xray_sha256=sha, pid=proc['pid'], start_ticks=proc['start_ticks']))
     r.require(len(candidates) == 1, 'ambiguous_or_missing_pasarguard_node')

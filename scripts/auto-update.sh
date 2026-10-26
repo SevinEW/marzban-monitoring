@@ -143,6 +143,46 @@ verify_asset() {
 verify_asset "$asset"
 verify_asset "marzwatch-auto-update.sh"
 
+# BEGIN multi-architecture Central cache.
+publish_central_release_cache() (
+  # A Central host serves either agent architecture. Never switch the current
+  # bundle until both binaries and the updater match the same manifest.
+  local cache="$UPDATER_DIR/release-cache" staged name bundle_sha target
+  mkdir -p "$cache" || return 1
+  chown root:marzwatch "$UPDATER_DIR" "$cache" || return 1
+  chmod 0750 "$UPDATER_DIR" "$cache" || return 1
+  staged="$(mktemp -d "$cache/.bundle.XXXXXX")" || return 1
+  trap 'rm -rf -- "$staged"' EXIT
+  chown root:marzwatch "$staged" || return 1
+  chmod 0750 "$staged" || return 1
+  for name in marzwatch-linux-amd64 marzwatch-linux-arm64 marzwatch-auto-update.sh; do
+    if [[ ! -f "$tmpdir/$name" ]]; then
+      download_release_file "$base/$name" "$tmpdir/$name" 120 || return 1
+    fi
+    verify_asset "$name"
+    install -o root -g marzwatch -m 0640 "$tmpdir/$name" "$staged/$name" || return 1
+  done
+  install -o root -g marzwatch -m 0640 "$tmpdir/SHA256SUMS" "$staged/SHA256SUMS" || return 1
+  bundle_sha="$(sha256sum "$tmpdir/SHA256SUMS" | awk '{print $1}')"
+  [[ "$bundle_sha" =~ ^[0-9a-f]{64}$ ]] || return 1
+  target="$cache/$bundle_sha"
+  if [[ -e "$target" ]]; then
+    # Immutable, already-published bundle: refuse a damaged cache.
+    (cd "$target" && sha256sum --status -c "$staged/SHA256SUMS") || return 1
+  else
+    mv -T "$staged" "$target" || return 1
+  fi
+  ln -sfn "$bundle_sha" "$cache/current.new" || return 1
+  mv -Tf "$cache/current.new" "$cache/current" || return 1
+  find "$cache" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr \
+    | awk 'NR>3 {$1=""; sub(/^ /,""); print}' \
+    | while IFS= read -r old; do
+        leaf="${old##*/}"
+        [[ "$leaf" =~ ^[0-9a-f]{64}$ && "$leaf" != "$bundle_sha" ]] && rm -rf -- "$old" || true
+      done
+)
+# END multi-architecture Central cache.
+
 new_sha="$(sha256sum "$tmpdir/$asset" | awk '{print $1}')"
 old_sha="$(sha256sum "$BIN" | awk '{print $1}')"
 new_updater_sha="$(sha256sum "$tmpdir/marzwatch-auto-update.sh" | awk '{print $1}')"
@@ -302,22 +342,10 @@ rm -f "$REQUEST"
 "$BIN" presence-install >/dev/null 2>&1 || log "presence helper installation pending"
 role="$(grep -oE '"role"[[:space:]]*:[[:space:]]*"(central|agent)"' "$CONFIG" | head -n1 | sed -E 's/.*"(central|agent)"/\1/' || true)"
 if [[ "$role" == central ]]; then
-  # Publish only verified assets after health checks, before notifying agents.
-  cache="$UPDATER_DIR/release-cache"
-  mkdir -p "$cache/$new_sha"
-  chown root:marzwatch "$UPDATER_DIR" "$cache" "$cache/$new_sha"
-  chmod 0750 "$UPDATER_DIR" "$cache" "$cache/$new_sha"
-  for name in "$asset" marzwatch-auto-update.sh SHA256SUMS; do
-    install -o root -g marzwatch -m 0640 "$tmpdir/$name" "$cache/$new_sha/$name"
-  done
-  ln -sfn "$new_sha" "$cache/current.new"
-  mv -Tf "$cache/current.new" "$cache/current"
-  find "$cache" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr \
-    | awk 'NR>3 {$1=""; sub(/^ /,""); print}' \
-    | while IFS= read -r old; do
-        leaf="${old##*/}"
-        [[ "$leaf" =~ ^[0-9a-f]{64}$ && "$leaf" != "$new_sha" ]] && rm -rf -- "$old" || true
-      done
+  # Keep the previous complete bundle if either architecture cannot be fetched.
+  if ! publish_central_release_cache; then
+    log "Central release cache refresh deferred; previous bundle preserved"
+  fi
   if [[ $binary_changed -eq 1 ]]; then
     "$CTL" fleet-update >/dev/null 2>&1 || true
     log "fleet update signal sent to nodes"

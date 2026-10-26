@@ -1,5 +1,5 @@
 """Hermetic Bash regressions: no network, systemd, or installation changes."""
-import os, shutil, subprocess, tempfile, unittest
+import hashlib, os, shutil, subprocess, tempfile, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,5 +100,55 @@ download_release_file() {
 download_verified_binary
 '''
             r=self.run_script(script,Path(td));self.assertNotEqual(r.returncode,0);self.assertIn('SHA256 verification failed',r.stdout)
+
+    def test_central_cache_serves_both_architectures_atomically(self):
+        updater=source('auto-update.sh')
+        verify=updater[updater.index('verify_asset() {'):updater.index('\nverify_asset "$asset"')]
+        publish=updater[updater.index('# BEGIN multi-architecture Central cache.'):updater.index('# END multi-architecture Central cache.')]
+        for host_arch in ['amd64','arm64']:
+            for scenario in ['success','download_failure','checksum_failure','repeat']:
+                with self.subTest(host=host_arch,scenario=scenario),tempfile.TemporaryDirectory() as td:
+                    d=Path(td);download=d/'download';download.mkdir();remote=d/'remote';remote.mkdir()
+                    names=['marzwatch-linux-amd64','marzwatch-linux-arm64','marzwatch-auto-update.sh']
+                    payloads={name:(name+'-verified').encode() for name in names}
+                    manifest=''.join(hashlib.sha256(data).hexdigest()+'  '+name+'\n' for name,data in payloads.items())
+                    (download/'SHA256SUMS').write_text(manifest)
+                    for name,data in payloads.items():
+                        (remote/name).write_bytes(data)
+                        if name in ['marzwatch-linux-'+host_arch,'marzwatch-auto-update.sh']:(download/name).write_bytes(data)
+                    missing='marzwatch-linux-'+('arm64' if host_arch=='amd64' else 'amd64')
+                    if scenario=='checksum_failure':(remote/missing).write_bytes(b'corrupt')
+                    cache=d/'lib'/'release-cache';cache.mkdir(parents=True)
+                    original=cache/('a'*64);original.mkdir();(original/'old').write_text('preserve')
+                    (cache/'current').symlink_to(original.name,target_is_directory=True)
+                    script=r'''set -Eeuo pipefail
+UPDATER_DIR="$TRACE/lib"
+tmpdir="$TRACE/download"
+base=https://github.com/example/release
+fail() { echo "$*" >&2; exit 1; }
+chown() { :; }
+install() { shift 4; command install "$@"; }
+download_release_file() {
+ echo "${1##*/}" >> "$TRACE/fetched"
+ if [[ "$CACHE_CASE" == download_failure ]]; then return 35; fi
+ cp "$TRACE/remote/${1##*/}" "$2"
+}
+'''+verify+'\n'+publish+r'''
+if ! publish_central_release_cache; then exit 42; fi
+if [[ "$CACHE_CASE" == repeat ]]; then publish_central_release_cache; fi
+'''
+                    result=self.run_script(script,d,{'CACHE_CASE':scenario})
+                    success=scenario in ['success','repeat']
+                    self.assertEqual(result.returncode==0,success,result.stderr)
+                    self.assertEqual((d/'fetched').read_text().splitlines(),[missing])
+                    self.assertEqual(list(cache.glob('.bundle.*')),[])
+                    if success:
+                        active=(cache/'current').resolve()
+                        self.assertEqual(active.name,hashlib.sha256(manifest.encode()).hexdigest())
+                        for name,data in payloads.items():self.assertEqual((active/name).read_bytes(),data)
+                        self.assertEqual((active/'SHA256SUMS').read_text(),manifest)
+                    else:
+                        self.assertEqual((cache/'current').resolve(),original)
+                        self.assertEqual((original/'old').read_text(),'preserve')
 
 if __name__=='__main__':unittest.main(verbosity=2)

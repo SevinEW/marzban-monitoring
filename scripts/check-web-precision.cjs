@@ -35,3 +35,35 @@ assert.equal(cx.presence.presenceValue({users:0,status:'ok'}).users,'0');
 assert.equal(cx.presence.presenceValue({users:-1,status:'ok'}).users,'—');
 assert.equal(cx.presence.presenceValue({users:Infinity,status:'ok'}).users,'—');
 console.log('PASS: presence zero, invalid data, incomplete coverage and stale status');
+
+// Incomplete fleet coverage must show the observed count without posing as a total.
+const view=cx.presence.presenceValue,description=cx.presence.presenceDescription;
+const partial={status:'partial',users:null,observed_users:0,ready:1,expected:17};
+assert.equal(view(partial,true).users,'0');assert.equal(view(partial,true).status,'partial');
+assert.equal(view(partial,true).coverage,'1 از 17 سرور');
+assert(description(partial,true).includes('این عدد مجموع کل شبکه نیست'));
+assert.equal(view({...partial,users:999,observed_users:4},true).users,'4');
+assert.equal(view({...partial,ready:0},true).users,'—');
+assert.equal(view({...partial,ready:18},true).users,'—');
+assert.equal(view({...partial,expected:0},true).users,'—');
+for(const bad of [null,-1,NaN,Infinity,1.5,'3',Number.MAX_SAFE_INTEGER+1]){
+ assert.equal(view({...partial,observed_users:bad},true).users,'—');
+}
+assert.equal(view({...partial,status:'stale',observed_users:9000},true).users,'—');
+assert.equal(view({status:'ok',users:0,ready:17,expected:17},true).users,'0');
+assert.equal(view({status:'ok',users:123,ready:1,expected:17},true).users,'—');
+assert.equal(view(partial,false).users,'—');
+// Exercise the real renderer through reconnect/coverage changes and repeated frames.
+const renderer=source.slice(source.indexOf('function renderPresence('),source.indexOf('function render(){'));
+vm.runInContext(renderer+';globalThis.renderPresence=renderPresence;',cx);
+let writes=0;const field=()=>({value:'',get textContent(){return this.value},set textContent(v){writes++;this.value=v}});
+const count=field(),coverage=field(),attrs={};
+const badge={dataset:{},title:'',querySelector:s=>s==='.presence-count'?count:coverage,getAttribute:k=>attrs[k],setAttribute:(k,v)=>attrs[k]=v};
+cx.renderPresence(badge,partial,true);assert.equal(count.textContent,'0');assert.equal(coverage.textContent,'1 از 17 سرور');
+assert.equal(badge.dataset.presence,'partial');const once=writes;
+cx.renderPresence(badge,partial,true);assert.equal(writes,once,'identical frame rewrites count');
+cx.renderPresence(badge,{status:'stale'},true);assert.equal(count.textContent,'—');
+assert(!coverage.textContent.includes('17'),'stale count retains old coverage');
+cx.renderPresence(badge,{status:'ok',users:9,ready:17,expected:17},true);assert.equal(count.textContent,'9');
+assert.equal(badge.dataset.presence,'ok');assert(!badge.title.includes('مجموع کل شبکه نیست'));
+console.log('PASS: partial counts, explicit coverage, true zero, invalid inputs, disconnect/reconnect and stable badge updates');

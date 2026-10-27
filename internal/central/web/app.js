@@ -30,13 +30,13 @@ function presenceValue(p,total=false){
  const partial=total&&p?.status==='partial'&&coverage&&p.ready>0&&p.ready<p.expected&&count(p.observed_users);
  const available=complete||partial,value=complete?p.users:partial?p.observed_users:null;
  const status=complete?'ok':partial?'partial':['ok','partial'].includes(p?.status)?'unavailable':p?.status||'unconfigured';
- return{users:available?num(value,0):'—',status,available,coverage:available&&coverage?`${num(p.ready,0)} از ${num(p.expected,0)} سرور`:status==='stale'?'در انتظار اتصال':status==='unconfigured'?'در انتظار فعال‌سازی':'در انتظار آمار'};
+ return{users:available?num(value,0):'—',status,available,coverage:available&&coverage?`${num(p.ready,0)} از ${num(p.expected,0)} سرور`:status==='stale'?'در انتظار اتصال':status==='unconfigured'?'در انتظار فعال‌سازی':['loopback_untracked','coverage_unverified'].includes(status)?'آمار ناقص':'در انتظار آمار'};
 }
 function presenceForNode(n,live=true){return n.presence?.status==='not_applicable'?n.presence:live?n.presence:{status:'stale'}}
 function presenceRows(p){return p?.status==='not_applicable'?[]:[['کاربران دارای اتصال باز',presenceValue(p).users],['دستگاه آنلاین','قابل تشخیص نیست']]}
 function presenceDescription(p,total=false){
  if(p?.status==='not_applicable')return '';
- const v=presenceValue(p,total),reasons={unconfigured:'ثبت آنلاین برای این منبع فعال نشده',source_changed:'هسته تغییر کرده؛ اعتبارسنجی دوباره لازم است',stale:'آمار آنلاین تازه در دسترس نیست',unavailable:'منبع آمار پاسخ نمی‌دهد',timeout:'دریافت آمار آنلاین با تأخیر مواجه شد',unsupported:'این نسخهٔ هسته آمار سازگار نمی‌دهد'};
+ const v=presenceValue(p,total),reasons={loopback_untracked:'هسته اتصال‌های عبوری از واسط داخلی را نمی‌شمارد؛ عدد معتبر در دسترس نیست',coverage_unverified:'پوشش شمارش این سرور تأیید نشده است',unconfigured:'ثبت آنلاین برای این منبع فعال نشده',source_changed:'هسته تغییر کرده؛ اعتبارسنجی دوباره لازم است',stale:'آمار آنلاین تازه در دسترس نیست',unavailable:'منبع آمار پاسخ نمی‌دهد',timeout:'دریافت آمار آنلاین با تأخیر مواجه شد',unsupported:'این نسخهٔ هسته آمار سازگار نمی‌دهد'};
  const text=v.status==='partial'?`${v.users} کاربر دارای اتصال باز در ${num(p.ready,0)} سرور با آمار معتبر؛ دادهٔ ${num(p.expected-p.ready,0)} سرور دیگر در دسترس نیست. این عدد مجموع کل شبکه نیست.`:v.status==='ok'?`${v.users} کاربر دارای اتصال باز${total?'؛ پوشش '+v.coverage:''}.`:reasons[v.status]||'آمار آنلاین در دسترس نیست';
  return text+' تعداد دستگاه فیزیکی قابل تشخیص نیست؛ عدد نمایش‌داده‌شده کاربران یکتا است.';
 }

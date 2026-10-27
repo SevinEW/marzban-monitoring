@@ -171,6 +171,13 @@ func view(n *State, now time.Time) View {
 	return v
 }
 func (r *Registry) Snapshot(ids []string, now time.Time) (map[string]View, Summary) {
+	return r.SnapshotWithQuality(ids, now, nil)
+}
+
+// Quality blocks are operator-reviewed source defects, independent of transport
+// health. Keep the node in Expected and exclude its identities before unioning.
+// A fresh successful RPC (including zero) cannot override a known blind spot.
+func (r *Registry) SnapshotWithQuality(ids []string, now time.Time, blocks map[string]string) (map[string]View, Summary) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	views := map[string]View{}
@@ -182,6 +189,13 @@ func (r *Registry) Snapshot(ids []string, now time.Time) (map[string]View, Summa
 		}
 		n := r.nodes[id]
 		v := view(n, now)
+		if reason, blocked := blocks[id]; blocked {
+			status := "coverage_unverified"
+			if reason == "loopback_untracked" {
+				status = reason
+			}
+			v = View{Status: status}
+		}
 		views[id] = v
 		summary.Expected++
 		if v.Users != nil {

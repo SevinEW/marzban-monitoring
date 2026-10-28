@@ -63,7 +63,9 @@ class CoreStageTest(unittest.TestCase):
                 result=c.stage(self.plan,self.cfg,self.ident,self.inv)
                 self.assertEqual(result['status'],'staged')
                 count=len(calls);c.stage(self.plan,self.cfg,self.ident,self.inv)
-                self.assertEqual(count,len(calls),'staging repeated')
+                self.assertEqual(calls[count:], [['docker','exec','node','sha256sum','/usr/local/bin/xray']])
+                replaced=False
+                with self.assertRaises(r.Unverified):c.stage(self.plan,self.cfg,self.ident,self.inv)
                 active=c.stage(self.plan,self.cfg,self.ident,dict(self.inv,xray_sha256=c.SHA))
                 self.assertEqual(active['status'],'active')
             self.assertFalse(any(any(v in cmd for v in ['restart','stop','kill','sh','bash']) for cmd in calls))

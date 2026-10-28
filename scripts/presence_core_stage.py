@@ -71,6 +71,11 @@ def stage(plan, cfg, ident, inv):
         return dict(status='active', sha256=SHA, previous_sha256=state['previous_sha256'])
     r.require(inv['xray_sha256'] == directive.get('previous_sha256'), 'core_stage_version_changed')
     if state.get('sha256') == SHA and state.get('status') == 'staged':
+        # A recreated container may have silently restored the stock binary.
+        # Never interpret an old staging receipt as proof of the current file.
+        r.require(state.get('node_container') == inv['node_container']
+                  and r.run(['docker', 'exec', inv['node_container'], 'sha256sum',
+                             state['executable']]).split()[0] == SHA, 'staged_core_replaced')
         return {k: state[k] for k in ['status', 'sha256', 'previous_sha256']}
     r.require(not state, 'core_stage_needs_review')
     container = inv['node_container']

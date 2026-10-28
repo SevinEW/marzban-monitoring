@@ -14,6 +14,7 @@ import (
 )
 
 const releaseCachePath = "/usr/local/lib/marzwatch/release-cache/current"
+const presenceCoreCachePath = "/usr/local/lib/marzwatch/presence-core-cache"
 
 func (s *Server) cachedRelease(w http.ResponseWriter, r *http.Request) {
 	s.serveRelease(w, r, releaseCachePath)
@@ -47,10 +48,13 @@ func (s *Server) serveRelease(w http.ResponseWriter, r *http.Request, root strin
 	}
 	name := string(body)
 	switch name {
-	case "SHA256SUMS", "marzwatch-linux-amd64", "marzwatch-linux-arm64", "marzwatch-auto-update.sh":
+	case "SHA256SUMS", "marzwatch-linux-amd64", "marzwatch-linux-arm64", "marzwatch-auto-update.sh", "xray-online-linux-amd64":
 	default:
 		http.NotFound(w, r)
 		return
+	}
+	if name == "xray-online-linux-amd64" && root == releaseCachePath {
+		root = presenceCoreCachePath
 	}
 	f, e := os.Open(filepath.Join(root, name))
 	if e != nil {

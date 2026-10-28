@@ -61,7 +61,7 @@ func (s *Server) webSnapshot(now time.Time) webFrame {
  eligible:=s.presenceScope(now)
  ids:=make([]string,0,len(nodes));for _,n:=range nodes{if (s.cfg.PresenceNodeIDs==nil&&!s.cfg.PresenceAutoEnroll)||eligible[n.ID]{ids=append(ids,n.ID)}}
  registry:=s.presence;if registry==nil{registry=presence.NewRegistry()}
- views,summary:=registry.SnapshotWithQuality(ids,now,s.cfg.PresenceQualityBlocks);f.Presence=summary
+ views,summary:=registry.Snapshot(ids,now);f.Presence=summary
  for _, n := range nodes {
 		m := n.Latest
 		w := webNode{ID: n.ID, Name: n.Name, Country: n.Location.Country, Code: n.Location.CountryCode, City: n.Location.City, IP: n.Location.PublicIP, OS: n.OS, Cores: n.Cores, CPU: m.CPUPercent, Load: m.Load1, RAM: m.MemUsed, RAMTotal: m.MemTotal, Disk: m.DiskUsed, DiskTotal: m.DiskTotal, RX: m.RXBps, TX: m.TXBps, Uptime: m.UptimeSeconds, Seen: n.LastSeen.UnixMilli(), Status: "online"}

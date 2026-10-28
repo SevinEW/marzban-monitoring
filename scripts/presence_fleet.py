@@ -74,6 +74,12 @@ def exchange(cfg, ident, report):
         conn.close()
 
 
+def local_addresses():
+    rows = json.loads(r.run(['ip', '-j', '-4', 'addr', 'show']))
+    return sorted({str(ipaddress.IPv4Address(a['local'])) for row in rows
+                   for a in row.get('addr_info', []) if a.get('scope') == 'global'})[:32]
+
+
 def inventory():
     # Inspect metadata only. Do not execute an unapproved core during discovery.
     ids = r.run(['docker', 'ps', '-q']).split()
@@ -150,11 +156,16 @@ def agent(cfg):
         inv = local.get('inventory') if bound else None
         if not inv:
             inv = inventory()
+        inv['addresses'] = local_addresses()
         local['inventory'] = inv
         report = {'status': 'ready' if bound else local.get('status', 'discovered'), 'inventory': inv}
         if local.get('reason'): report['reason'] = local['reason']
         if local.get('proof'): report['proof'] = local['proof']
         plan = exchange(cfg, ident, report)
+        if plan and plan.get('core_stage'):
+            from presence_core_stage import stage
+            local.setdefault('proof', {})['core_stage'] = stage(plan, cfg, ident, inv)
+            local['needs_report'] = True
         if bound:
             local.update(status='ready', report_after=now+300, retry_after=0)
         elif plan is None:
@@ -172,10 +183,15 @@ def agent(cfg):
                 r.atomic_json(PROFILE, profile)
                 r.atomic_json(r.BINDING, candidate, mode=0o640, gid=grp.getgrnam('marzwatch').gr_gid)
                 r.atomic_json(r.STATE, {'boot_id': boot, 'binding_digest': r.digest(candidate)})
+            method = candidate.get('verification_method', 'existing_account_flow')
+            proof = dict(local.get('proof', {}), runtime_tracking_verified=True,
+                         verification_method=method, vpn_restarted=False,
+                         pid=candidate['cores'][0]['pid'],
+                         existing_account_flow=method == 'existing_account_flow',
+                         tls_verified=method == 'existing_account_flow')
             local.update(status='ready', reason='', retry_after=0, report_after=0,
                          needs_report=True,
-                         proof={'existing_account_flow': True, 'tls_verified': True,
-                                'vpn_restarted': False, 'pid': candidate['cores'][0]['pid']})
+                         proof=proof)
     except Exception as e:
         local.update(status='unverified', needs_report=True,
                      reason=str(e) if isinstance(e, r.Unverified) else type(e).__name__)
@@ -227,6 +243,8 @@ def publish_plans(cfg, sources):
             r.validate_policy(source, profile)
             source['namespace'] = namespace
             plans[monitor_id] = dict(schema=1, monitor_id=monitor_id, expires=expires, profile=profile, source=source)
+            if monitor_id in cfg.get('core_stages', {}):
+                plans[monitor_id]['core_stage'] = cfg['core_stages'][monitor_id]
         except (KeyError, r.Unverified):
             continue
     import grp

@@ -20,8 +20,6 @@ type Config struct {
  // Nil preserves legacy inventory; an explicit list scopes presence to VPN nodes.
  PresenceNodeIDs []string `json:"presence_node_ids"`
  PresenceAutoEnroll bool `json:"presence_auto_enroll,omitempty"`
- // Audited source defects stay in coverage, but cannot publish authoritative counts.
- PresenceQualityBlocks map[string]string `json:"presence_quality_blocks,omitempty"`
  WebListen string `json:"web_listen,omitempty"`
  TelegramDisabled bool `json:"telegram_disabled,omitempty"`
  LocationOverrides map[string]model.Location `json:"location_overrides,omitempty"`

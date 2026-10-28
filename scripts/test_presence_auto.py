@@ -71,6 +71,40 @@ class AutoEnrollmentTests(unittest.TestCase):
         self.run_reconcile();self.control.assert_not_called()
         self.assertEqual(self.state['nodes']['m']['phase'], 'awaiting_online_policy')
 
+    def test_existing_manual_node_follows_ip_and_runtime_without_restart(self):
+        self.core['config'] = a.online_config(self.core['config'])
+        previous = a.profile_for(self.node, self.core, self.inv, 'Mostaghim', self.fleet['auto_enroll'])
+        previous.pop('automatic')
+        previous.update(node_address='192.0.2.19', xray_sha256='c'*64)
+        self.fleet['nodes']['m'] = previous
+        self.run_reconcile(manual=['m'])
+        self.control.assert_not_called()
+        self.assertEqual(self.fleet['nodes']['m']['node_address'], self.node['address'])
+        self.assertEqual(self.fleet['nodes']['m']['xray_sha256'], self.inv['xray_sha256'])
+        self.assertNotIn('automatic', self.fleet['nodes']['m'])
+        self.assertNotIn('m', self.state['nodes'])
+        for variant in ['different_identity', 'disabled_policy', 'disabled_profile']:
+            self.node['id'] = 20
+            self.core['config'] = a.online_config(self.core['config'])
+            self.fleet['nodes']['m']['enabled'] = True
+            original = copy.deepcopy(self.fleet['nodes']['m'])
+            if variant == 'different_identity': self.node['id'] = 99
+            if variant == 'disabled_policy': self.core['config'].pop('policy')
+            if variant == 'disabled_profile': self.fleet['nodes']['m']['enabled'] = False
+            self.inv['xray_sha256'] = 'd'*64
+            self.run_reconcile(manual=['m']);self.control.assert_not_called()
+            self.assertEqual(self.fleet['nodes']['m']['xray_sha256'], original['xray_sha256'])
+
+    def test_floating_ip_and_ambiguous_ownership(self):
+        self.node['address'] = '192.0.2.90'
+        self.inv['addresses'] = ['192.0.2.20', '192.0.2.90']
+        self.core['config'] = a.online_config(self.core['config'])
+        self.run_reconcile();self.control.assert_not_called()
+        self.assertEqual(self.fleet['nodes']['m']['node_address'], '192.0.2.90')
+        self.monitors['n'] = {'location': {'public_ip': '192.0.2.21'}}
+        self.reports['n'] = dict(self.reports['m'], peer_ip='192.0.2.21')
+        self.assertEqual(a.matched_nodes(self.monitors, self.reports, self.snapshot, self.now), {})
+
     def test_manual_nodes_and_ambiguous_or_forged_matches_never_mutate(self):
         for variant in ['manual', 'peer', 'duplicate_panel', 'duplicate_monitor', 'stale', 'bad_digest', 'missing_inventory']:
             with self.subTest(variant=variant):

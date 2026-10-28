@@ -33,8 +33,11 @@ def require(ok, reason):
 
 
 def run(args, timeout=5, input=None):
-    p = subprocess.run(args, input=input, capture_output=True, text=True, timeout=timeout)
     label = 'xray_'+args[2] if len(args) > 2 and args[1] == 'api' else Path(args[0]).name+'_'+args[1]
+    try:
+        p = subprocess.run(args, input=input, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise Unverified('source_timeout:'+label) from None
     require(p.returncode == 0, 'source_command_failed:'+label)
     require(len(p.stdout) <= 4 * 1024 * 1024, 'source_response_too_large')
     return p.stdout
@@ -195,8 +198,16 @@ def discover_api(old, boot, proc, path, ports, excluded):
     for port in candidates:
         b = candidate_binding(old, boot, proc, '127.0.0.1:' + str(port))
         path.write_text(json.dumps(b)); path.chmod(0o600)
-        result = json.loads(run([MONITOR, 'presence-check', '--binding', str(path)], timeout=3))
+        try:
+            result = json.loads(run([MONITOR, 'presence-check', '--binding', str(path)], timeout=5))
+        except Unverified:
+            # Another owned loopback listener may not implement StatsService.
+            # Its timeout must not prevent checking the actual API listener.
+            continue
         if result.get('status') == 'ok':
+            count = result.get('users')
+            if type(count) is int and count > 0:
+                b['verification_method'] = 'native_active_accounts'
             found.append(b)
     require(len(found) == 1, 'stats_api_unverified')
     return found[0]
@@ -315,7 +326,9 @@ def recover(profile, binding, boot):
     excluded = {i['port'] for i in source['config'].get('inbounds', []) if isinstance(i.get('port'), int)}
     with tempfile.TemporaryDirectory(prefix='marzwatch-presence-recovery-') as tmp:
         candidate = discover_api(binding, boot, proc, Path(tmp)/'binding.json', owned, excluded)
-        prove_tracking(exe, candidate, source, inbound, profile)
+        if candidate.get('verification_method') != 'native_active_accounts':
+            prove_tracking(exe, candidate, source, inbound, profile)
+            candidate['verification_method'] = 'existing_account_flow'
     require(process(proc['pid']) == proc and Path('/proc/sys/kernel/random/boot_id').read_text().strip() == boot,
             'core_changed_during_probe')
     require(candidate['cores'][0]['address'].rsplit(':', 1)[1].isdigit(), 'invalid_api')

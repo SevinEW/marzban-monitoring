@@ -72,6 +72,20 @@ class RecoveryTest(unittest.TestCase):
                 r.discover_api(self.binding, 'boot-b', {'pid': 43, 'start_ticks': '1'}, Mock(),
                                {('127.0.0.1', 1234), ('127.0.0.1', 5678)}, set())
 
+    def test_non_api_timeout_does_not_hide_active_native_accounts(self):
+        with patch.object(r, 'run', side_effect=[r.Unverified('source_timeout:marzwatch_presence-check'),
+                                              '{"status":"ok","users":7}']):
+            b = r.discover_api(self.binding, 'boot-b', {'pid': 43, 'start_ticks': '1'}, Mock(),
+                               {('127.0.0.1', 1234), ('127.0.0.1', 5678)}, set())
+        self.assertEqual(b['verification_method'], 'native_active_accounts')
+        self.assertEqual(b['cores'][0]['address'], '127.0.0.1:5678')
+
+    def test_empty_native_api_still_requires_a_real_flow_proof(self):
+        with patch.object(r, 'run', return_value='{"status":"ok","users":0}'):
+            b = r.discover_api(self.binding, 'boot-b', {'pid': 43, 'start_ticks': '1'}, Mock(),
+                               {('127.0.0.1', 1234)}, set())
+        self.assertNotIn('verification_method', b)
+
     def test_remote_plan_never_exports_account_or_tls_secrets(self):
         source=copy.deepcopy(self.source)
         source['candidates']=[1,2,3,4,5,6]

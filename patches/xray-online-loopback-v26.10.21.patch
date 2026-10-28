@@ -1,0 +1,62 @@
+diff --git a/app/stats/online_loopback_test.go b/app/stats/online_loopback_test.go
+new file mode 100644
+index 0000000..bc3c4e0
+--- /dev/null
++++ b/app/stats/online_loopback_test.go
+@@ -0,0 +1,28 @@
++package stats_test
++
++import (
++	"github.com/xtls/xray-core/app/stats"
++	"testing"
++)
++
++func TestLocalRelayAccountLifecycle(t *testing.T) {
++	for _, ip := range []string{"127.0.0.1", "[::1]", "::1", "198.51.100.2"} {
++		t.Run(ip, func(t *testing.T) {
++			m := stats.NewOnlineMap()
++			m.AddIP(ip)
++			m.AddIP(ip)
++			if m.Count() != 1 {
++				t.Fatal("same account/source should have one online entry")
++			}
++			m.RemoveIP(ip)
++			if m.Count() != 1 {
++				t.Fatal("remaining authenticated connection lost")
++			}
++			m.RemoveIP(ip)
++			m.RemoveIP(ip)
++			if m.Count() != 0 {
++				t.Fatal("disconnected account retained")
++			}
++		})
++	}
++}
+diff --git a/app/stats/online_map.go b/app/stats/online_map.go
+index 575cd38..522badb 100644
+--- a/app/stats/online_map.go
++++ b/app/stats/online_map.go
+@@ -6,11 +6,6 @@ import (
+ 	"time"
+ )
+ 
+-const (
+-	localhostIPv4 = "127.0.0.1"
+-	localhostIPv6 = "[::1]"
+-)
+-
+ type ipEntry struct {
+ 	refCount int
+ 	lastSeen int64
+@@ -34,9 +29,8 @@ func NewOnlineMap() *OnlineMap {
+ 
+ // AddIP implements stats.OnlineMap.
+ func (om *OnlineMap) AddIP(ip string) {
+-	if ip == localhostIPv4 || ip == localhostIPv6 {
+-		return
+-	}
++	// Authenticated accounts can arrive through a local relay. Their links must
++	// participate in the same refcount lifecycle as direct connections.
+ 	now := time.Now().Unix()
+ 	om.access.Lock()
+ 	defer om.access.Unlock()

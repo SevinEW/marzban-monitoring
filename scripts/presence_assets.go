@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed recover_pasarguard_presence.py presence_source.py presence_fleet.py presence_auto.py presence_panel.py
+//go:embed recover_pasarguard_presence.py presence_source.py presence_fleet.py presence_auto.py presence_panel.py presence_core_stage.py
 var presenceAssets embed.FS
 
 // Install only fixed, release-embedded files. Receiving a plan can never install

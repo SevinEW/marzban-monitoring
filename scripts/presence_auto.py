@@ -51,12 +51,22 @@ def matched_nodes(monitors, reports, snapshot, now):
             or peer != ipv4(node.get('location', {}).get('public_ip'))
             or not valid_inventory(report.get('inventory'))):
             continue
-        matches = [n for n in snapshot['nodes'] if ipv4(n['address']) == peer]
+        addresses = {peer}
+        # Optional bounded list from the authenticated root agent. A Floating IP
+        # need not be the address selected for outgoing monitoring traffic.
+        aliases = report['inventory'].get('addresses', [])
+        if isinstance(aliases, list) and len(aliases) <= 32:
+            addresses.update(ipv4(v) for v in aliases if isinstance(v, str))
+        addresses.discard('')
+        matches = [n for n in snapshot['nodes'] if ipv4(n['address']) in addresses]
         same_ip = [m for k, m in monitors.items()
                    if k != 'central' and ipv4(m.get('location', {}).get('public_ip')) == peer]
         if len(matches) == 1 and len(same_ip) == 1:
             found[mid] = matches[0]
-    return found
+    # A moved/shared Floating IP must not bind two physical monitors to one
+    # panel node. Keep both unresolved until the address ownership is unique.
+    return {mid: n for mid, n in found.items()
+            if sum(other['id'] == n['id'] for other in found.values()) == 1}
 
 
 def source_for(node, core, candidates):
@@ -90,6 +100,24 @@ def profile_for(node, core, inv, probe, options):
     return profile
 
 
+def refresh_existing_manual(fleet, mid, node, core, report, candidates):
+    """Refresh an existing identity after an address/runtime change; never start it."""
+    previous = fleet['nodes'].get(mid)
+    if (not previous or not previous.get('enabled') or previous.get('node_id') != node['id']
+            or node['status'] != 'connected'):
+        return
+    try:
+        if online_config(core['config']) != core['config']:
+            return  # An operator disabled tracking; never override that policy.
+        probe = choose_probe(node, core, candidates)
+        updated = profile_for(node, core, report['inventory'], probe,
+                              {'probe_host': previous['https_host']})
+        updated.pop('automatic', None)
+        fleet['nodes'][mid] = dict(previous, **updated)
+    except (r.Unverified, ValueError, KeyError, TypeError):
+        return
+
+
 def reconcile(fleet, snapshot, monitors, reports, state, manual_ids, control, save, now):
     """At most one new activation, with journal-before-side-effect semantics."""
     options = fleet['auto_enroll']
@@ -105,12 +133,13 @@ def reconcile(fleet, snapshot, monitors, reports, state, manual_ids, control, sa
     activation_pending = any(e.get('restart_attempted') and e.get('phase') in
         ['activating', 'activation_unknown', 'verifying'] for e in entries.values())
     for mid, node in sorted(matches.items()):
-        if mid in manual_ids and mid not in entries:
-            continue
         entry = entries.get(mid)
         report = reports[mid]
         core = snapshot['cores'].get(str(node['core_id']))
         if not core or core['type'] != 'xray':
+            continue
+        if mid in manual_ids and mid not in entries:
+            refresh_existing_manual(fleet, mid, node, core, report, snapshot['candidates'])
             continue
         if entry and entry.get('phase') == 'ready':
             profile = fleet['nodes'].get(mid, {})
@@ -136,7 +165,9 @@ def reconcile(fleet, snapshot, monitors, reports, state, manual_ids, control, sa
                     entry['phase'] = 'verifying'
                 proof = report.get('proof', {})
                 if (report.get('status') == 'ready' and report['received'] >= entry['started']
-                    and proof.get('existing_account_flow') is True and proof.get('tls_verified') is True
+                    and ((proof.get('existing_account_flow') is True and proof.get('tls_verified') is True)
+                         or (proof.get('runtime_tracking_verified') is True
+                             and proof.get('verification_method') == 'native_active_accounts'))
                     and node['status'] == 'connected'):
                     entry['phase'] = 'ready'
                 elif (node['status'] == 'error' and now - entry['started'] > 180

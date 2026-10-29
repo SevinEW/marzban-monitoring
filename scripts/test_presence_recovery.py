@@ -117,5 +117,16 @@ class RecoveryTest(unittest.TestCase):
                     with self.assertRaises(r.Unverified):source_slot(d)
                 with source_slot(d):pass
 
+    def test_docker_metadata_is_bounded_read_only_local_socket(self):
+        for path in ['/containers/node/restart','/containers/node/stop','http://external/containers/json','/containers/../json']:
+            with self.assertRaises(r.Unverified):r.docker_json(path)
+        response=Mock();response.status=200;response.read.return_value=b'{"State":{"Running":true}}'
+        with patch.object(r.http.client.HTTPConnection,'request') as request,patch.object(r.http.client.HTTPConnection,'getresponse',return_value=response):
+            self.assertTrue(r.docker_json('/containers/node/json')['State']['Running'])
+            request.assert_called_once_with('GET','/containers/node/json')
+        response.status=503
+        with patch.object(r.http.client.HTTPConnection,'request'),patch.object(r.http.client.HTTPConnection,'getresponse',return_value=response):
+            with self.assertRaises(r.Unverified):r.docker_json('/containers/json')
+
 
 if __name__ == '__main__': unittest.main()

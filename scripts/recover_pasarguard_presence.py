@@ -8,6 +8,8 @@ Unknown images, policies, sources and unsuccessful probes fail closed.
 """
 import argparse
 import hashlib
+import http.client
+import re
 import ipaddress
 import json
 import os
@@ -41,6 +43,34 @@ def run(args, timeout=5, input=None):
     require(p.returncode == 0, 'source_command_failed:'+label)
     require(len(p.stdout) <= 4 * 1024 * 1024, 'source_response_too_large')
     return p.stdout
+
+
+def docker_json(path):
+    """Fixed read-only local daemon calls, avoiding a cold Docker CLI process.
+
+    Low-memory hosts can spend seconds paging the Go CLI into RAM while the
+    daemon responds in milliseconds. Never accept an endpoint, method or body
+    from a remote plan; no lifecycle operations are exposed here.
+    """
+    require(path == '/containers/json' or re.fullmatch(r'/containers/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}/json', path),
+            'invalid_docker_read_path')
+    class LocalDocker(http.client.HTTPConnection):
+        def connect(self):
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.sock.settimeout(5)
+            self.sock.connect('/var/run/docker.sock')
+    conn = LocalDocker('localhost', timeout=5)
+    try:
+        conn.request('GET', path)
+        response = conn.getresponse()
+        require(response.status == 200, 'docker_metadata_unavailable')
+        data = response.read(4*1024*1024+1)
+        require(len(data) <= 4*1024*1024, 'docker_metadata_too_large')
+        return json.loads(data)
+    except (TimeoutError, socket.timeout):
+        raise Unverified('source_timeout:docker_metadata') from None
+    finally:
+        conn.close()
 
 
 def process(pid):
@@ -297,7 +327,7 @@ def prove_tracking(exe, binding, source, inbound, profile):
 
 def recover(profile, binding, boot, runtime=None):
     if runtime is None:
-        info, = json.loads(run(['docker', 'inspect', profile['node_container']], timeout=12))
+        info = docker_json('/containers/'+profile['node_container']+'/json')
         require(info['State']['Running'] and info['HostConfig']['NetworkMode'] == 'host'
                 and info['Image'] == profile['node_image_id'], 'node_runtime_changed')
         top = run(['docker', 'top', profile['node_container'], '-eo', 'pid,comm'], timeout=12)

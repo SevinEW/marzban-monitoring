@@ -119,18 +119,20 @@ def cached_runtime(cached):
 def inventory(cached=None):
     current = cached_runtime(cached)
     if current is not None: return current
-    # Docker CLI startup on a one-core node under the 20% worker quota may
-    # exceed five seconds. Discovery is bounded and only needed on container
-    # replacement/first enrollment, never on each telemetry sample.
-    ids = r.run(['docker', 'ps', '-q'], timeout=12).split()
-    r.require(len(ids) <= 40, 'too_many_containers')
+    # Query only fixed read-only daemon metadata. No CLI process, shell, panel
+    # database or core lifecycle call is needed, even on a cold small host.
+    rows = r.docker_json('/containers/json')
+    r.require(isinstance(rows, list) and len(rows) <= 40, 'too_many_containers')
     candidates = []
     boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-    if not ids: r.require(False, 'ambiguous_or_missing_pasarguard_node')
-    infos = json.loads(r.run(['docker', 'inspect', *ids], timeout=12))
-    for info in infos:
-        image = info['Config']['Image'].split('@')[0].split(':')[0].lower()
-        if image not in ['pasarguard/node', 'ghcr.io/pasarguard/node'] or info['HostConfig']['NetworkMode'] != 'host':
+    for row in rows:
+        image = row['Image'].split('@')[0].split(':')[0].lower()
+        if image not in ['pasarguard/node', 'ghcr.io/pasarguard/node']:
+            continue
+        cid = row['Id']
+        r.require(re.fullmatch('[a-f0-9]{64}', cid), 'invalid_container_id')
+        info = r.docker_json('/containers/'+cid+'/json')
+        if not info['State']['Running'] or info['HostConfig']['NetworkMode'] != 'host':
             continue
         parent = r.process(info['State']['Pid'])
         seed = dict(node_container=info['Name'].lstrip('/'), node_image_id=info['Image'],

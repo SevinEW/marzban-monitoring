@@ -62,16 +62,26 @@ func (c *Collector) Collect() (model.Metric, error) {
  } else {
   m.NetworkCounters = counters
   for _, n := range counters { m.RXBytesTotal += n.RX; m.TXBytesTotal += n.TX }
-  rx, tx, valid := model.NetworkDelta(c.prevNet, counters)
-  d := m.Timestamp.Sub(c.prevNetAt).Seconds()
-  if valid && d > 0 && d <= 10 { m.RXBps=float64(rx)*8/d; m.TXBps=float64(tx)*8/d; m.NetworkReady=true }
-  c.prevNet, c.prevNetAt = counters, m.Timestamp
+  c.networkSample(&m, counters, time.Now())
  }
 	m.UptimeSeconds, _ = readUptime()
 	if len(errs) > 0 {
 		return m, errors.New(strings.Join(errs, "; "))
 	}
 	return m, nil
+}
+
+func (c *Collector) networkSample(m *model.Metric, counters []model.NetCounter, at time.Time) {
+ rx, tx, valid := model.NetworkDelta(c.prevNet, counters)
+ d := at.Sub(c.prevNetAt).Seconds()
+ // Keep the previous baseline on an early wake; the next normal sample still
+ // includes every byte. Never advertise a tiny burst as a one-second rate.
+ if valid && d > 0 && d < .75 { return }
+ if valid && d >= .75 && d <= 10 {
+  m.RXBps=float64(rx)*8/d; m.TXBps=float64(tx)*8/d
+  m.NetworkReady=true; m.NetworkSampleSeconds=d
+ }
+ c.prevNet, c.prevNetAt = counters, at
 }
 
 func readCPU() (idle, total uint64, err error) {

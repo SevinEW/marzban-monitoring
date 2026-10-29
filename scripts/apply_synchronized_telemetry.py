@@ -22,13 +22,16 @@ start = s.index('func (a *Agent) collectLoop() {')
 end = s.index('func (a *Agent) sendMetric(', start)
 s = s[:start] + '''func (a *Agent) collectLoop() {
 	// Prime CPU/network counters and allow an existing identity to learn Central's
-	// clock immediately. All subsequent samples use shared five-second slots.
+	// clock immediately. Subsequent samples join shared slots without repeating
+	// a boundary after an asynchronous clock correction.
 	m, _ := a.col.Collect()
+	last := time.Now()
 	m.Timestamp = a.clock.Now()
 	offerLatest(a.samples, m)
 	for {
-		time.Sleep(a.clock.Delay())
+		time.Sleep(a.clock.DelayAfter(last))
 		m, err := a.col.Collect()
+		last = time.Now()
 		if err != nil { log.Printf("collect partial error: %v", err) }
 		m.Timestamp = a.clock.Now()
 		offerLatest(a.samples, m)

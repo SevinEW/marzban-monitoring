@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestPhysicalBoundaryExcludesStackedInterfaces(t *testing.T) {
@@ -30,6 +31,36 @@ func TestPhysicalBoundaryExcludesStackedInterfaces(t *testing.T) {
 	// IP aliases never appear as extra kernel devices/counters.
 	if _, e = parseNetwork(strings.NewReader("wgcf: 1000 0 0 0 0 0 0 0 500 0 0 0 0 0 0 0\n"), dir); e == nil {
 		t.Fatal("unverified fallback")
+	}
+}
+
+func TestEarlyWakePreservesBytesWithoutBurstRate(t *testing.T) {
+	c := New()
+	base := time.Unix(1000, 0)
+	counters := func(rx uint64) []model.NetCounter {
+		return []model.NetCounter{{Name: "eth0", Index: 2, RX: rx, TX: rx / 2}}
+	}
+	prime := model.Metric{}
+	c.networkSample(&prime, counters(1000), base)
+	early := model.Metric{}
+	c.networkSample(&early, counters(2000), base.Add(5*time.Millisecond))
+	if early.NetworkReady || early.RXBps != 0 {
+		t.Fatal("millisecond rate published", early)
+	}
+	next := model.Metric{}
+	c.networkSample(&next, counters(101000), base.Add(time.Second))
+	if !next.NetworkReady || next.NetworkSampleSeconds != 1 || next.RXBps != 800000 || next.TXBps != 400000 {
+		t.Fatal("bytes lost or time compressed", next)
+	}
+	gap := model.Metric{}
+	c.networkSample(&gap, counters(201000), base.Add(20*time.Second))
+	if gap.NetworkReady {
+		t.Fatal("gap published as live")
+	}
+	reset := model.Metric{}
+	c.networkSample(&reset, counters(1), base.Add(21*time.Second))
+	if reset.NetworkReady {
+		t.Fatal("reset published as live")
 	}
 }
 

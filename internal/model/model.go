@@ -11,6 +11,12 @@ type Location struct {
 }
 
 type Metric struct {
+ NetworkSource string `json:"network_source,omitempty"`
+ NetworkReady bool `json:"network_ready"`
+ NetworkBoot string `json:"network_boot,omitempty"`
+ NetworkCounters []NetCounter `json:"network_counters,omitempty"`
+ DiskAvailable uint64 `json:"disk_available"`
+ DiskReserved uint64 `json:"disk_reserved"`
  PublicIP string `json:"public_ip,omitempty"`
 	Timestamp     time.Time `json:"timestamp"`
 	CPUPercent    float64   `json:"cpu_percent"`

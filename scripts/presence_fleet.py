@@ -80,27 +80,74 @@ def local_addresses():
                    for a in row.get('addr_info', []) if a.get('scope') == 'global'})[:32]
 
 
-def inventory():
-    # Inspect metadata only. Do not execute an unapproved core during discovery.
-    ids = r.run(['docker', 'ps', '-q']).split()
+def cached_runtime(cached):
+    """Re-discover a child only inside the previously attested live container.
+
+    Boot and parent start ticks prevent PID reuse. A replacement container must
+    go through Docker discovery again. No daemon call on a simple core restart.
+    """
+    if not cached or not cached.get('parent_start_ticks'):
+        return None
+    try:
+        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        parent = r.process(cached['parent'])
+        if boot != cached['boot_id'] or parent['start_ticks'] != cached['parent_start_ticks']:
+            return None
+        tasks = list((Path('/proc')/str(parent['pid'])/'task').iterdir())
+        r.require(len(tasks) <= 128, 'too_many_parent_threads')
+        children = set()
+        for task in tasks:
+            try: children.update(int(x) for x in (task/'children').read_text().split())
+            except FileNotFoundError: continue
+        r.require(len(children) <= 128, 'too_many_core_children')
+        candidates = []
+        for pid in children:
+            try:
+                if (Path('/proc')/str(pid)/'comm').read_text().strip() != 'xray': continue
+                proc = r.process(pid)
+                if proc['parent'] == parent['pid']: candidates.append(proc)
+            except FileNotFoundError: continue
+        r.require(len(candidates) == 1, 'ambiguous_running_core')
+        proc = candidates[0]
+        sha = r.file_digest('/proc/'+str(proc['pid'])+'/exe')
+        r.require(r.process(proc['pid']) == proc, 'core_changed_during_probe')
+        return dict(cached, xray_sha256=sha, pid=proc['pid'], start_ticks=proc['start_ticks'])
+    except (FileNotFoundError, ProcessLookupError, KeyError):
+        return None
+
+
+def inventory(cached=None):
+    current = cached_runtime(cached)
+    if current is not None: return current
+    # Docker CLI startup on a one-core node under the 20% worker quota may
+    # exceed five seconds. Discovery is bounded and only needed on container
+    # replacement/first enrollment, never on each telemetry sample.
+    ids = r.run(['docker', 'ps', '-q'], timeout=12).split()
     r.require(len(ids) <= 40, 'too_many_containers')
     candidates = []
-    for cid in ids:
-        info, = json.loads(r.run(['docker', 'inspect', cid]))
+    boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    if not ids: r.require(False, 'ambiguous_or_missing_pasarguard_node')
+    infos = json.loads(r.run(['docker', 'inspect', *ids], timeout=12))
+    for info in infos:
         image = info['Config']['Image'].split('@')[0].split(':')[0].lower()
         if image not in ['pasarguard/node', 'ghcr.io/pasarguard/node'] or info['HostConfig']['NetworkMode'] != 'host':
             continue
-        top = r.run(['docker', 'top', cid, '-eo', 'pid,comm'])
-        pids = [int(line.split()[0]) for line in top.splitlines()[1:] if line.split()[-1] == 'xray']
-        if len(pids) != 1:
-            continue
-        proc = r.process(pids[0])
-        r.require(proc['parent'] == info['State']['Pid'], 'core_parent_changed')
-        sha = r.file_digest('/proc/'+str(proc['pid'])+'/exe')
-        candidates.append(dict(node_container=info['Name'].lstrip('/'), node_image_id=info['Image'],
-                               xray_sha256=sha, pid=proc['pid'], start_ticks=proc['start_ticks']))
+        parent = r.process(info['State']['Pid'])
+        seed = dict(node_container=info['Name'].lstrip('/'), node_image_id=info['Image'],
+                    parent=parent['pid'], parent_start_ticks=parent['start_ticks'], boot_id=boot)
+        candidate = cached_runtime(seed)
+        if candidate is not None: candidates.append(candidate)
     r.require(len(candidates) == 1, 'ambiguous_or_missing_pasarguard_node')
     return candidates[0]
+
+
+def retry_delay(reason, failures):
+    # Short, bounded retries for a rolling core/container change; persistent
+    # failures back off to five minutes. This never authorizes a VPN restart.
+    transient = reason.startswith('source_timeout:docker_') or reason in {
+        'ambiguous_running_core', 'ambiguous_or_missing_pasarguard_node',
+        'core_changed_during_probe', 'runtime_not_approved', 'node_runtime_changed'}
+    return min(300, 30 * (2 ** min(max(failures-1, 0), 4))) if transient else 300
 
 
 def approved_profile(plan, ident, inv, cfg):
@@ -155,7 +202,7 @@ def agent(cfg):
         ident = json.loads(IDENTITY.read_text())
         inv = local.get('inventory') if bound else None
         if not inv:
-            inv = inventory()
+            inv = inventory(local.get('inventory'))
         inv['addresses'] = local_addresses()
         local['inventory'] = inv
         report = {'status': 'ready' if bound else local.get('status', 'discovered'), 'inventory': inv}
@@ -167,7 +214,7 @@ def agent(cfg):
             local.setdefault('proof', {})['core_stage'] = stage(plan, cfg, ident, inv)
             local['needs_report'] = True
         if bound:
-            local.update(status='ready', report_after=now+300, retry_after=0)
+            local.update(status='ready', report_after=now+300, retry_after=0, failures=0)
         elif plan is None:
             local.update(status='pending', retry_after=now+60)
         else:
@@ -178,7 +225,7 @@ def agent(cfg):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 original = r.BINDING.read_bytes() if r.BINDING.exists() else None
                 seed = binding or {'schema': 1, 'namespace': '', 'cores': [{}]}
-                candidate = r.recover(profile, seed, boot)
+                candidate = r.recover(profile, seed, boot, runtime=inv)
                 r.require((r.BINDING.read_bytes() if r.BINDING.exists() else None) == original, 'binding_changed_concurrently')
                 r.atomic_json(PROFILE, profile)
                 r.atomic_json(r.BINDING, candidate, mode=0o640, gid=grp.getgrnam('marzwatch').gr_gid)
@@ -189,12 +236,14 @@ def agent(cfg):
                          pid=candidate['cores'][0]['pid'],
                          existing_account_flow=method == 'existing_account_flow',
                          tls_verified=method == 'existing_account_flow')
-            local.update(status='ready', reason='', retry_after=0, report_after=0,
+            local.update(status='ready', reason='', retry_after=0, report_after=0, failures=0,
                          needs_report=True,
                          proof=proof)
     except Exception as e:
-        local.update(status='unverified', needs_report=True,
-                     reason=str(e) if isinstance(e, r.Unverified) else type(e).__name__)
+        reason = str(e) if isinstance(e, r.Unverified) else type(e).__name__
+        failures = local.get('failures', 0)+1
+        local.update(status='unverified', needs_report=True, reason=reason, failures=failures,
+                     retry_after=now+retry_delay(reason, failures))
     r.atomic_json(LOCAL, local)
     print(json.dumps({k: local[k] for k in ['status', 'reason'] if k in local}))
 

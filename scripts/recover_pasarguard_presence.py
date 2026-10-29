@@ -295,15 +295,24 @@ def prove_tracking(exe, binding, source, inbound, profile):
     require(False, 'probe_account_did_not_clear')
 
 
-def recover(profile, binding, boot):
-    info, = json.loads(run(['docker', 'inspect', profile['node_container']]))
-    require(info['State']['Running'] and info['HostConfig']['NetworkMode'] == 'host'
-            and info['Image'] == profile['node_image_id'], 'node_runtime_changed')
-    top = run(['docker', 'top', profile['node_container'], '-eo', 'pid,comm'])
-    pids = [int(line.split()[0]) for line in top.splitlines()[1:] if line.split()[-1] == 'xray']
-    require(len(pids) == 1, 'ambiguous_running_core')
-    proc = process(pids[0])
-    require(proc['parent'] == info['State']['Pid'], 'core_parent_changed')
+def recover(profile, binding, boot, runtime=None):
+    if runtime is None:
+        info, = json.loads(run(['docker', 'inspect', profile['node_container']], timeout=12))
+        require(info['State']['Running'] and info['HostConfig']['NetworkMode'] == 'host'
+                and info['Image'] == profile['node_image_id'], 'node_runtime_changed')
+        top = run(['docker', 'top', profile['node_container'], '-eo', 'pid,comm'], timeout=12)
+        pids = [int(line.split()[0]) for line in top.splitlines()[1:] if line.split()[-1] == 'xray']
+        require(len(pids) == 1, 'ambiguous_running_core')
+        proc = process(pids[0])
+        require(proc['parent'] == info['State']['Pid'], 'core_parent_changed')
+    else:
+        # This inventory was just locally attested, never taken from a plan.
+        require(runtime['boot_id'] == boot and runtime['node_container'] == profile['node_container']
+                and runtime['node_image_id'] == profile['node_image_id'], 'node_runtime_changed')
+        proc = process(runtime['pid'])
+        require(proc['start_ticks'] == runtime['start_ticks'] and proc['parent'] == runtime['parent']
+                and process(runtime['parent'])['start_ticks'] == runtime['parent_start_ticks'],
+                'core_parent_changed')
     exe = '/proc/'+str(proc['pid'])+'/exe'
     require(file_digest(exe) == profile['xray_sha256'], 'core_version_changed')
     # Execute inside the existing image only after a process change. No steady

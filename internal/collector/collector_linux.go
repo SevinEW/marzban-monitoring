@@ -19,8 +19,8 @@ type Collector struct {
 	mu           sync.Mutex
 	prevCPUIdle  uint64
 	prevCPUTotal uint64
-	prevRX       uint64
-	prevTX       uint64
+	prevNet []model.NetCounter
+ boot string
 	prevNetAt    time.Time
 }
 
@@ -49,28 +49,24 @@ func (c *Collector) Collect() (model.Metric, error) {
 	if err != nil {
 		errs = append(errs, "mem: "+err.Error())
 	}
-	m.DiskUsed, m.DiskTotal, err = readDisk("/")
+	m.DiskUsed, m.DiskTotal, m.DiskAvailable, m.DiskReserved, err = readDisk("/")
 	if err != nil {
 		errs = append(errs, "disk: "+err.Error())
 	}
-	rx, tx, err := readNet()
-	if err != nil {
-		errs = append(errs, "net: "+err.Error())
-	} else {
-		m.RXBytesTotal, m.TXBytesTotal = rx, tx
-		if !c.prevNetAt.IsZero() {
-			d := m.Timestamp.Sub(c.prevNetAt).Seconds()
-			if d > 0 {
-				if rx >= c.prevRX {
-					m.RXBps = float64(rx-c.prevRX) * 8 / d
-				}
-				if tx >= c.prevTX {
-					m.TXBps = float64(tx-c.prevTX) * 8 / d
-				}
-			}
-		}
-		c.prevRX, c.prevTX, c.prevNetAt = rx, tx, m.Timestamp
-	}
+ if c.boot == "" { b, _ := os.ReadFile("/proc/sys/kernel/random/boot_id"); c.boot = strings.TrimSpace(string(b)) }
+ m.NetworkSource, m.NetworkBoot = model.NetworkSource, c.boot
+ counters, err := readNetwork("/proc/net/dev", "/sys/class/net")
+ if err != nil || c.boot == "" {
+  // A missing boundary is unknown, never a plausible zero or all-interface sum.
+  c.prevNet = nil; c.prevNetAt = time.Time{}
+ } else {
+  m.NetworkCounters = counters
+  for _, n := range counters { m.RXBytesTotal += n.RX; m.TXBytesTotal += n.TX }
+  rx, tx, valid := model.NetworkDelta(c.prevNet, counters)
+  d := m.Timestamp.Sub(c.prevNetAt).Seconds()
+  if valid && d > 0 && d <= 10 { m.RXBps=float64(rx)*8/d; m.TXBps=float64(tx)*8/d; m.NetworkReady=true }
+  c.prevNet, c.prevNetAt = counters, m.Timestamp
+ }
 	m.UptimeSeconds, _ = readUptime()
 	if len(errs) > 0 {
 		return m, errors.New(strings.Join(errs, "; "))
@@ -155,50 +151,18 @@ func readMem() (used, total, swapUsed, swapTotal uint64, err error) {
 	return
 }
 
-func readDisk(path string) (used, total uint64, err error) {
-	var st syscall.Statfs_t
-	if err = syscall.Statfs(path, &st); err != nil {
-		return
-	}
-	total = st.Blocks * uint64(st.Bsize)
-	free := st.Bavail * uint64(st.Bsize)
-	if total >= free {
-		used = total - free
-	}
-	return
+func diskUsage(st syscall.Statfs_t) (used, total, available, reserved uint64) {
+ total = st.Blocks * uint64(st.Bsize)
+ if st.Blocks >= st.Bfree { used = (st.Blocks-st.Bfree)*uint64(st.Bsize) }
+ available = st.Bavail*uint64(st.Bsize)
+ if st.Bfree >= st.Bavail { reserved = (st.Bfree-st.Bavail)*uint64(st.Bsize) }
+ return
 }
-
-func readNet() (rx, tx uint64, err error) {
-	f, err := os.Open("/proc/net/dev")
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	s := bufio.NewScanner(f)
-	line := 0
-	for s.Scan() {
-		line++
-		if line <= 2 {
-			continue
-		}
-		parts := strings.SplitN(s.Text(), ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		iface := strings.TrimSpace(parts[0])
-		if iface == "lo" {
-			continue
-		}
-		flds := strings.Fields(parts[1])
-		if len(flds) < 16 {
-			continue
-		}
-		r, _ := strconv.ParseUint(flds[0], 10, 64)
-		t, _ := strconv.ParseUint(flds[8], 10, 64)
-		rx += r
-		tx += t
-	}
-	return rx, tx, s.Err()
+func readDisk(path string) (used, total, available, reserved uint64, err error) {
+ var st syscall.Statfs_t
+ if err = syscall.Statfs(path, &st); err != nil { return }
+ used,total,available,reserved=diskUsage(st)
+ return
 }
 
 func readUptime() (uint64, error) {

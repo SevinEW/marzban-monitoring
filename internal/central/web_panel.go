@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 "github.com/SevinEW/marzban-monitoring/internal/presence"
+"github.com/SevinEW/marzban-monitoring/internal/model"
 )
 
 //go:embed web/*
@@ -18,6 +19,10 @@ var webAssets embed.FS
 
 // Explicit DTO: never serialize model.Node (contains registration secrets).
 type webNode struct {
+ NetworkReady bool `json:"network_ready"`
+ Interfaces []string `json:"interfaces"`
+ DiskAvailable uint64 `json:"disk_available"`
+ DiskReserved uint64 `json:"disk_reserved"`
  Presence presence.View `json:"presence"`
 	ID               string  `json:"id"`
 	Name             string  `json:"name"`
@@ -65,7 +70,11 @@ func (s *Server) webSnapshot(now time.Time) webFrame {
  for _, n := range nodes {
 		m := n.Latest
 		w := webNode{ID: n.ID, Name: n.Name, Country: n.Location.Country, Code: n.Location.CountryCode, City: n.Location.City, IP: n.Location.PublicIP, OS: n.OS, Cores: n.Cores, CPU: m.CPUPercent, Load: m.Load1, RAM: m.MemUsed, RAMTotal: m.MemTotal, Disk: m.DiskUsed, DiskTotal: m.DiskTotal, RX: m.RXBps, TX: m.TXBps, Uptime: m.UptimeSeconds, Seen: n.LastSeen.UnixMilli(), Status: "online"}
-		age := now.Sub(n.LastSeen)
+		w.NetworkReady = m.NetworkSource == model.NetworkSource && m.NetworkReady
+  for _, nic := range m.NetworkCounters { w.Interfaces=append(w.Interfaces,nic.Name) }
+  w.DiskAvailable,w.DiskReserved=m.DiskAvailable,m.DiskReserved
+  if !w.NetworkReady { w.RX=0; w.TX=0 }
+  age := now.Sub(n.LastSeen)
 		if n.LastSeen.IsZero() || age > 150*time.Second {
 			w.Status = "offline"
 			w.RX = 0

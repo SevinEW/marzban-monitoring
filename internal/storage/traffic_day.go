@@ -17,6 +17,12 @@ func addDailyTraffic(n *model.Node, prev, next model.Metric) {
 		return
 	}
 	var rx, tx uint64
+ if next.NetworkSource != "" || prev.NetworkSource != "" {
+  if next.NetworkSource != model.NetworkSource || prev.NetworkSource != next.NetworkSource || next.NetworkBoot == "" || next.NetworkBoot != prev.NetworkBoot { return }
+  var valid bool
+  rx,tx,valid=model.NetworkDelta(prev.NetworkCounters,next.NetworkCounters)
+  if !valid { return }
+ } else {
 	// A decreasing counter means reboot/reset; never subtract unsigned counters.
 	if next.RXBytesTotal >= prev.RXBytesTotal {
 		rx = next.RXBytesTotal - prev.RXBytesTotal
@@ -24,6 +30,7 @@ func addDailyTraffic(n *model.Node, prev, next model.Metric) {
 	if next.TXBytesTotal >= prev.TXBytesTotal {
 		tx = next.TXBytesTotal - prev.TXBytesTotal
 	}
+ }
 	if rx == 0 && tx == 0 {
 		return
 	}

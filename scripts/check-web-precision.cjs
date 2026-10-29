@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const app=fs.readFileSync('internal/central/web/app.js','utf8').split('// DOM application.')[0];
 const cx=vm.createContext({});vm.runInContext(app+';globalThis.math={aggregate,segments,rate,bytes,niceMax,rateAxis,compareNodes};',cx);const m=cx.math;
-const fresh=(v={})=>({status:'online',cpu:50,cores:4,rx:2e9,tx:1e9,ram:2,ram_total:8,disk:10,disk_total:100,...v});
+const fresh=(v={})=>({status:'online',network_ready:true,cpu:50,cores:4,rx:2e9,tx:1e9,ram:2,ram_total:8,disk:10,disk_total:100,...v});
 const result=m.aggregate([fresh(),fresh({cpu:100,cores:1,rx:1e9,tx:0}),fresh({status:'stale',rx:9e9}),fresh({status:'offline',rx:99e9})]);
 assert.equal(result.a,3e9);assert.equal(result.c,4e9);assert.equal(result.cpu,60);assert.equal(result.count,2);assert.equal(result.total,4);assert.equal(result.ram,25);
 assert.equal(m.aggregate([fresh({status:'offline'})]).a,null);assert.equal(m.aggregate([fresh({cores:0})]).cpu,null);
@@ -18,8 +18,8 @@ cx.writeHTML(element,'<use href="/flags.svg#DE"/>');cx.writeHTML(element,'<use h
 cx.writeHTML(element,'<use href="/flags.svg#FI"/>');assert.equal(assignments,2);console.log('PASS: identical SVG survives repeated live frames; changed country updates');
 
 const nodes=[
-{id:'a',name:'Node2',code:'DE',status:'online',traffic_available:true,traffic:200,rx:20,tx:30},
-{id:'b',name:'Node1',code:'NL',status:'online',traffic_available:true,traffic:500,rx:10,tx:10},
+{id:'a',name:'Node2',code:'DE',status:'online',network_ready:true,traffic_available:true,traffic:200,rx:20,tx:30},
+{id:'b',name:'Node1',code:'NL',status:'online',network_ready:true,traffic_available:true,traffic:500,rx:10,tx:10},
 {id:'c',name:'Node3',code:'TR',status:'stale',traffic_available:false,traffic:9999,rx:9999,tx:9999}
 ];
 assert.equal([...nodes].sort((a,b)=>m.compareNodes(a,b)).map(n=>n.id).join(','),'b,a,c');
@@ -79,3 +79,5 @@ assert(!coverage.textContent.includes('17'),'stale count retains old coverage');
 cx.renderPresence(badge,{status:'ok',users:9,ready:17,expected:17},true);assert.equal(count.textContent,'9');
 assert.equal(badge.dataset.presence,'ok');assert(!badge.title.includes('مجموع کل شبکه نیست'));
 console.log('PASS: partial counts, explicit coverage, true zero, invalid inputs, disconnect/reconnect and stable badge updates');
+
+assert.equal(m.aggregate([fresh({network_ready:false})]).a,null);assert.equal(m.aggregate([fresh({network_ready:false})]).cpu,50);assert.equal(m.aggregate([fresh(),fresh({network_ready:false,rx:999e9})]).c,3e9);console.log('PASS: unverified interface rates excluded independently of resources');

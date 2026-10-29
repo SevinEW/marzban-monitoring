@@ -19,6 +19,23 @@ func (c *Clock) Delay() time.Duration {
 	return Next(now).Sub(now)
 }
 
+// DelayAfter preserves a monotonic minimum interval while still joining shared
+// slots. An offset learned while sleeping can move the previous wake just
+// before a boundary; joining that boundary again would produce a millisecond
+// sample, whose burst rate could replace a full-second sample in the UI.
+func (c *Clock) DelayAfter(last time.Time) time.Duration {
+	return sampleDelay(time.Now(), last, time.Duration(c.offset.Load()))
+}
+
+func sampleDelay(now, last time.Time, offset time.Duration) time.Duration {
+	wall := now.Add(offset)
+	wait := Next(wall).Sub(wall)
+	if !last.IsZero() && now.Sub(last)+wait < 3*Interval/4 {
+		wait += Interval
+	}
+	return wait
+}
+
 // Observe uses only short, authenticated exchanges. Slow responses give an
 // unreliable clock estimate; absent headers keep older Centrals compatible.
 func (c *Clock) Observe(header string, started, received time.Time) {

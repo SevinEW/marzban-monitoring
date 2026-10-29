@@ -13,7 +13,7 @@ import (
 )
 func TestWebSnapshotExcludesSecretsAndMarksStale(t *testing.T){
  st,err:=storage.Open(filepath.Join(t.TempDir(),"state.json"));if err!=nil{t.Fatal(err)}
- now:=time.Now();st.UpsertNode(model.Node{ID:"node",Name:"test",Secret:"NEVER-EXPOSE-SECRET",ServerKey:"PRIVATE-MACHINE-KEY",LastSeen:now.Add(-11*time.Second),Latest:model.Metric{RXBps:2e9}})
+ now:=time.Now();st.UpsertNode(model.Node{ID:"node",Name:"test",Secret:"NEVER-EXPOSE-SECRET",ServerKey:"PRIVATE-MACHINE-KEY",LastSeen:now.Add(-11*time.Second),Latest:model.Metric{RXBps:2e9,NetworkSource:model.NetworkSource,NetworkReady:true}})
  s:=&Server{store:st};f:=s.webSnapshot(now);b,_:=json.Marshal(f)
  if strings.Contains(string(b),"SECRET")||strings.Contains(string(b),"MACHINE")||strings.Contains(string(b),"secret"){t.Fatal("private identity leaked")}
  if len(f.Nodes)!=1||f.Nodes[0].Status!="stale"||f.Nodes[0].RX!=2e9{t.Fatal("freshness or rate units incorrect")}

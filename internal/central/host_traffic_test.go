@@ -3,6 +3,7 @@ package central
 import (
 	"github.com/SevinEW/marzban-monitoring/internal/model"
 	"path/filepath"
+"os"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 
 func hostTestNode(id string, stamp int64, rx uint64) model.Node {
 	t := time.Unix(stamp, 0)
-	return model.Node{ID: id, LastContact: t, LastSeen: t, Latest: model.Metric{Timestamp: t, RXBytesTotal: rx, TXBytesTotal: rx / 2, UptimeSeconds: uint64(stamp), RXBps: 1000000000, TXBps: 1000000000}}
+	return model.Node{ID: id, LastContact: t, LastSeen: t, Latest: model.Metric{NetworkSource:model.NetworkSource, NetworkBoot:"boot", NetworkReady:true, NetworkCounters:[]model.NetCounter{{Name:"eth0",Index:2,RX:rx,TX:rx/2}}, Timestamp: t, RXBytesTotal: rx, TXBytesTotal: rx / 2, UptimeSeconds: uint64(stamp), RXBps: 1000000000, TXBps: 1000000000}}
 }
 func TestHostRollingWindowAndPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "host.json")
@@ -74,4 +75,25 @@ func TestHostUsesExistingBitRatesWithoutPanelMapping(t *testing.T) {
 	if strings.Contains(out, "N/A") || !strings.Contains(out, "2.00 Gbps") || !strings.Contains(out, "24H") {
 		t.Fatal(out)
 	}
+}
+
+func TestHostArchivesIncompatibleSeriesAndRejectsOldAgents(t *testing.T) {
+ path:=filepath.Join(t.TempDir(),"host.json")
+ old:=[]byte(`{"Version":1,"Nodes":{"old":{"First":1,"RX":999999999}}}`)
+ if e:=os.WriteFile(path,old,0600);e!=nil{t.Fatal(e)}
+ h,e:=openHostTraffic(path);if e!=nil{t.Fatal(e)}
+ b,e:=os.ReadFile(path+".all-interfaces-v1.bak");if e!=nil||string(b)!=string(old){t.Fatal(e,string(b))}
+ if h.data.Version!=2||len(h.data.Nodes)!=0{t.Fatal("legacy series reused")}
+ n:=hostTestNode("old",100000,99999999);n.Latest.NetworkSource=""
+ h.sample([]model.Node{n},time.Unix(100000,0));if len(h.data.Nodes)!=0{t.Fatal("old agent accepted")}
+}
+func TestHostTopologyChangesDoNotImportLifetimeOrMaskReset(t *testing.T) {
+ h,_:=openHostTraffic(filepath.Join(t.TempDir(),"host.json"))
+ a:=hostTestNode("n",100000,1000);h.sample([]model.Node{a},a.LastContact)
+ b:=hostTestNode("n",100005,2000);b.Latest.NetworkCounters=append(b.Latest.NetworkCounters,model.NetCounter{Name:"eth1",Index:3,RX:999999999})
+ h.sample([]model.Node{b},b.LastContact)
+ total,complete:=hostSum(h.data.Nodes["n"],100005);if total!=0||complete{t.Fatal(total,complete)}
+ c:=hostTestNode("n",100010,3000);c.Latest.NetworkCounters=append(c.Latest.NetworkCounters,model.NetCounter{Name:"eth1",Index:3,RX:10})
+ h.sample([]model.Node{c},c.LastContact)
+ total,_=hostSum(h.data.Nodes["n"],100010);if total!=0{t.Fatal("reset hidden",total)}
 }

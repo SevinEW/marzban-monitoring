@@ -2,6 +2,8 @@ import copy
 import hashlib
 import json
 import time
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 import presence_fleet as f
@@ -52,6 +54,26 @@ class FleetTest(unittest.TestCase):
         p=f.approved_profile(self.plan,self.ident,self.inv,self.cfg)
         self.assertNotIn('panel_ssh',p);self.assertNotIn('command',p);self.assertNotIn('identity_file',p)
         self.assertEqual(p['probe_destination'],'192.0.2.1')
+
+    def test_cached_container_rebind_avoids_docker_and_rejects_parent_reuse(self):
+        cached=dict(self.inv, parent=20,parent_start_ticks='100',boot_id='boot')
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'sys/kernel/random').mkdir(parents=True)
+            (root/'sys/kernel/random/boot_id').write_text('boot')
+            (root/'20/task/20').mkdir(parents=True);(root/'20/task/20/children').write_text('42')
+            (root/'42').mkdir();(root/'42/comm').write_text('xray')
+            def fake_path(path): return root if str(path)=='/proc' else root/str(path).removeprefix('/proc/')
+            def proc(pid): return dict(pid=pid,start_ticks='100' if pid==20 else '200',parent=1 if pid==20 else 20)
+            with patch.object(f,'Path',side_effect=fake_path),patch.object(r,'process',side_effect=proc),patch.object(r,'file_digest',return_value='a'*64),patch.object(r,'run',side_effect=AssertionError('Docker must not run')):
+                got=f.inventory(cached)
+                self.assertEqual(got['pid'],42);self.assertEqual(got['start_ticks'],'200')
+                self.assertIsNone(f.cached_runtime(dict(cached,parent_start_ticks='99')))
+                self.assertIsNone(f.cached_runtime(dict(cached,boot_id='other-boot')))
+
+    def test_transient_recovery_backoff_is_bounded_not_every_sample(self):
+        for reason in ['source_timeout:docker_ps','runtime_not_approved','ambiguous_running_core']:
+            self.assertEqual([f.retry_delay(reason,n) for n in range(1,7)],[30,60,120,240,300,300])
+        self.assertEqual(f.retry_delay('runtime_tracking_unverified',1),300)
 
 
 if __name__=='__main__':unittest.main()

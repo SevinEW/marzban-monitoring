@@ -22,7 +22,9 @@ type hostBucket struct {
 }
 type hostNode struct {
 	First, Last, Gap float64
-	Metric           time.Time
+	Boot string
+ Counters []model.NetCounter
+ Metric           time.Time
 	RX, TX, Uptime   uint64
 	Buckets          []hostBucket
 }
@@ -37,7 +39,7 @@ type hostTraffic struct {
 }
 
 func openHostTraffic(path string) (*hostTraffic, error) {
-	h := &hostTraffic{path: path, data: hostDisk{Version: 1, Nodes: map[string]*hostNode{}}}
+	h := &hostTraffic{path: path, data: hostDisk{Version: 2, Nodes: map[string]*hostNode{}}}
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return h, nil
@@ -53,7 +55,15 @@ func openHostTraffic(path string) (*hostTraffic, error) {
 	if err = json.Unmarshal(b, &h.data); err != nil {
 		return nil, err
 	}
-	if h.data.Version != 1 || h.data.Nodes == nil {
+	if h.data.Version == 1 {
+  // Archive the incompatible all-interface series before starting a new window.
+  // O_EXCL preserves the original across repeated starts before the first save.
+  backup, e := os.OpenFile(path+".all-interfaces-v1.bak", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+  if e == nil { _, e = backup.Write(b); if e == nil { e = backup.Sync() }; closeErr := backup.Close(); if e == nil { e = closeErr } }
+  if e != nil && !os.IsExist(e) { return nil, e }
+  h.data = hostDisk{Version:2, Nodes:map[string]*hostNode{}}
+ }
+ if h.data.Version != 2 || h.data.Nodes == nil {
 		return nil, fmt.Errorf("invalid host traffic history")
 	}
 	return h, nil
@@ -69,25 +79,26 @@ func (h *hostTraffic) sample(nodes []model.Node, now time.Time) {
 		if n.ID == "central" {
 			contact = m.Timestamp
 		}
-		if m.Timestamp.IsZero() || contact.IsZero() || now.Sub(contact) > 30*time.Second || contact.After(now.Add(5*time.Second)) {
+		if m.NetworkSource != model.NetworkSource || m.NetworkBoot == "" || len(m.NetworkCounters)==0 || m.Timestamp.IsZero() || contact.IsZero() || now.Sub(contact) > 30*time.Second || contact.After(now.Add(5*time.Second)) {
 			continue
 		}
 		p := h.data.Nodes[n.ID]
 		if p == nil {
-			h.data.Nodes[n.ID] = &hostNode{First: t, Last: t, Gap: t, Metric: m.Timestamp, RX: m.RXBytesTotal, TX: m.TXBytesTotal, Uptime: m.UptimeSeconds}
+			h.data.Nodes[n.ID] = &hostNode{Boot:m.NetworkBoot, Counters:append([]model.NetCounter(nil), m.NetworkCounters...), First: t, Last: t, Gap: t, Metric: m.Timestamp, RX: m.RXBytesTotal, TX: m.TXBytesTotal, Uptime: m.UptimeSeconds}
 			continue
 		}
 		if !m.Timestamp.After(p.Metric) || t <= p.Last {
 			continue
 		}
-		reset := m.UptimeSeconds < p.Uptime || m.RXBytesTotal < p.RX || m.TXBytesTotal < p.TX
+		rxDelta, txDelta, valid := model.NetworkDelta(p.Counters, m.NetworkCounters)
+  reset := !valid || m.NetworkBoot != p.Boot || m.UptimeSeconds < p.Uptime
 		if reset {
 			p.Gap = t
 		} else {
 			if t-p.Last > 30 {
 				p.Gap = t
 			}
-			rx, tx := float64(m.RXBytesTotal-p.RX), float64(m.TXBytesTotal-p.TX)
+			rx, tx := float64(rxDelta), float64(txDelta)
 			start := p.Last
 			if start < t-hostWindow-3600 {
 				start = t - hostWindow - 3600
@@ -111,7 +122,9 @@ func (h *hostTraffic) sample(nodes []model.Node, now time.Time) {
 				start = end
 			}
 		}
-		p.Last = t
+		p.Boot = m.NetworkBoot
+  p.Counters = append([]model.NetCounter(nil), m.NetworkCounters...)
+  p.Last = t
 		p.Metric = m.Timestamp
 		p.RX = m.RXBytesTotal
 		p.TX = m.TXBytesTotal

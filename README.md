@@ -142,3 +142,23 @@ may need manual deletion, and Telegram's message-deletion age limits still apply
 Traffic TODAY is the Iran calendar day starting at 00:00, not a rolling 24-hour window. Central uses the same embedded Asia/Tehran timezone for accounting, live cards and daily reports, independently of the host timezone or an older configured timezone. History remains saved; midnight selects the new day instead of erasing yesterday. Cards show the new day on their next Telegram update.
 
 Counter intervals crossing midnight are divided in proportion to elapsed time, preserving the total byte count. With five-second samples, the exact per-packet distribution inside that boundary interval is not known. Existing historical daily totals are retained and cannot be rebucketed from aggregates if a previous installation used a different timezone; the first full Iran day after upgrading is the clean comparison period. Restarting does not reset saved daily totals.
+
+
+## Removing a monitoring node
+
+The web card X confirms the exact node and IP. A node with a recent authenticated
+heartbeat receives a fixed MarzWatch-only uninstall action over its existing pinned
+TLS connection; no SSH is required. The card remains pending until the node confirms
+cleanup. The embedded root helper removes only MarzWatch services, program,
+configuration, data and its service account. It does not change PasarGuard, Xray,
+Docker, firewall rules or host swap. Central cannot be removed from a card.
+
+An offline node is removed from the central list only, with no deferred uninstall.
+Revoked identities cannot reappear from late metric packets; an intentional fresh
+installation can register a new identity. Online removal requires an updated agent
+and an authenticated, same-origin web session. Expired or unacknowledged actions
+remain visibly incomplete rather than claiming success.
+
+Reinstalled monitoring agents can enroll presence automatically once the previous
+same-IP identity has both Central contact and enrollment reports older than ten
+minutes. Fresh, conflicting identities remain blocked; matching never uses names.

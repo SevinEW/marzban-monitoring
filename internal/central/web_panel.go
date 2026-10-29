@@ -19,6 +19,7 @@ var webAssets embed.FS
 
 // Explicit DTO: never serialize model.Node (contains registration secrets).
 type webNode struct {
+ Removal *removalView `json:"removal,omitempty"`
  NetworkReady bool `json:"network_ready"`
  NetworkSampleSeconds float64 `json:"network_sample_seconds,omitempty"`
  Interfaces []string `json:"interfaces"`
@@ -71,6 +72,7 @@ func (s *Server) webSnapshot(now time.Time) webFrame {
  for _, n := range nodes {
 		m := n.Latest
 		w := webNode{ID: n.ID, Name: n.Name, Country: n.Location.Country, Code: n.Location.CountryCode, City: n.Location.City, IP: n.Location.PublicIP, OS: n.OS, Cores: n.Cores, CPU: m.CPUPercent, Load: m.Load1, RAM: m.MemUsed, RAMTotal: m.MemTotal, Disk: m.DiskUsed, DiskTotal: m.DiskTotal, RX: m.RXBps, TX: m.TXBps, Uptime: m.UptimeSeconds, Seen: n.LastSeen.UnixMilli(), Status: "online"}
+		w.Removal=s.removalSnapshot(n.ID,now)
 		w.NetworkReady = m.NetworkSource == model.NetworkSource && m.NetworkReady
   w.NetworkSampleSeconds = m.NetworkSampleSeconds
   for _, nic := range m.NetworkCounters { w.Interfaces=append(w.Interfaces,nic.Name) }
@@ -182,6 +184,7 @@ func (s *Server) startWebPanel() error {
 	assets, _ := fs.Sub(webAssets, "web")
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stream", h.stream)
+ mux.HandleFunc("POST /api/nodes/{id}/remove",s.removeWebNode)
 	mux.HandleFunc("GET /api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		h.mu.RLock()

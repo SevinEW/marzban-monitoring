@@ -40,6 +40,12 @@ type metricAlert struct {
 }
 
 type Server struct {
+ removalMu sync.RWMutex
+ removalCapMu sync.Mutex
+ removalPath string
+ removals map[string]nodeRemoval
+ removalCap map[string]time.Time
+ revoked map[string]bool
  autoScopeMu sync.Mutex
  autoScopeNext time.Time
  autoScopeIDs map[string]bool
@@ -66,6 +72,7 @@ func Run(cfg config.Config) error {
 		return err
 	}
 	s := &Server{presence:presence.NewRegistry(),cfg: cfg, store: st, bot: telegram.New(cfg.TelegramToken, cfg.AdminChatID), tz: tz, alerts: map[string]*alertTracker{}, stop: make(chan struct{})}
+	if err:=s.initRemovals(nodeRemovalsPath);err!=nil{return err}
 	fp, err := security.EnsureSelfSigned(certPath, keyPath, cfg.PublicIP)
 	if err != nil {
 		return err
@@ -83,6 +90,7 @@ func Run(cfg config.Config) error {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("POST /api/v1/register", s.register)
 	mux.HandleFunc("POST /api/v1/metrics", s.metrics)
+ mux.Handle("POST /api/v1/node-action",concurrencyLimit(http.HandlerFunc(s.removeNodeAction),2))
  mux.Handle("POST /api/v1/release",concurrencyLimit(http.HandlerFunc(s.cachedRelease),2))
  mux.Handle("POST /api/v1/presence-enroll", concurrencyLimit(http.HandlerFunc(s.enrollPresence),2))
  mux.Handle("POST /api/v1/presence", concurrencyLimit(http.HandlerFunc(s.receivePresence),4))
@@ -137,6 +145,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hostname required", 400)
 		return
 	}
+	s.removalMu.RLock();defer s.removalMu.RUnlock()
 	id, _ := config.RandomToken(12)
 	secret, _ := config.RandomToken(32)
 	name := strings.TrimSpace(q.Name)
@@ -179,6 +188,8 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("X-MW-Node")
 	n, ok := s.store.GetNode(id)
 	if !ok {
+  s.removalMu.RLock();removed:=s.removalRevoked(id);s.removalMu.RUnlock()
+  if removed{http.Error(w,"removed node",410);return}
 		http.Error(w, "unknown node", 401)
 		return
 	}
@@ -206,6 +217,9 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now()
 	}
+	s.removalMu.RLock();defer s.removalMu.RUnlock()
+ if s.removalRevoked(id){http.Error(w,"removed node",410);return}
+	s.removalHeader(id,w,r)
 	updated, _ := s.store.UpdateMetric(id, m, s.tz)
 	s.evaluate(updated)
 	w.WriteHeader(204)

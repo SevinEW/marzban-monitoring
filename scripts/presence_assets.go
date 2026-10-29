@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed recover_pasarguard_presence.py presence_source.py presence_fleet.py presence_auto.py presence_panel.py presence_core_stage.py
+//go:embed recover_pasarguard_presence.py presence_source.py presence_fleet.py presence_auto.py presence_panel.py presence_core_stage.py node_remove.py
 var presenceAssets embed.FS
 
 // Install only fixed, release-embedded files. Receiving a plan can never install
@@ -41,6 +41,20 @@ func InstallPresence() error {
 		changed = true
 	}
 	units := map[string]string{
+ "marzwatch-uninstall.service": `[Unit]
+Description=MarzWatch authenticated node removal
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/marzwatch/node_remove.py
+TimeoutStartSec=150
+Nice=15
+CPUQuota=20%
+MemoryMax=64M
+TasksMax=32
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+`,
 		"marzwatch-presence-enroll.service": `[Unit]
 Description=MarzWatch verified fleet presence enrollment
 After=network-online.target docker.service

@@ -81,3 +81,34 @@ assert.equal(badge.dataset.presence,'ok');assert(!badge.title.includes('مجمو
 console.log('PASS: partial counts, explicit coverage, true zero, invalid inputs, disconnect/reconnect and stable badge updates');
 
 assert.equal(m.aggregate([fresh({network_ready:false})]).a,null);assert.equal(m.aggregate([fresh({network_ready:false})]).cpu,50);assert.equal(m.aggregate([fresh(),fresh({network_ready:false,rx:999e9})]).c,3e9);console.log('PASS: unverified interface rates excluded independently of resources');
+// Removal is a separate, explicit action. Tests never contact a server.
+vm.runInContext('globalThis.removalState=removalState;',cx);
+const removable={id:'n1',name:'Node 1',ip:'192.0.2.1',status:'online'};
+assert.equal(cx.removalState({...removable,id:'central'}).allowed,false);
+assert.equal(cx.removalState({...removable,status:'offline'}).offline,true);
+assert.equal(cx.removalState({...removable,removal:{status:'accepted'}}).busy,true);
+assert.equal(cx.removalState({...removable,removal:{status:'failed'}},{status:'sending'}).busy,true);
+assert.equal(cx.removalState({...removable,removal:{status:'failed'}}).busy,false);
+const removalHTML=fs.readFileSync('internal/central/web/index.html','utf8');
+assert(removalHTML.includes('فقط MarzWatch؛ پاسارگارد و VPN حذف نمی‌شوند'));
+assert(removalHTML.includes('aria-describedby="remove-name remove-ip remove-description remove-scope"'));
+assert(source.includes("n.id==='central'?'':`<button"),'Master has a remove control');
+assert(source.includes('class="server-card">${cardTemplate()}</button>${'),'remove control nested in card button');
+async function checkRemovalController(){
+ const fields=new Map();const field=id=>{if(!fields.has(id))fields.set(id,{hidden:true,textContent:'',open:true,showModal(){this.open=true},close(){this.open=false},focus(){this.focused=true}});return fields.get(id)};
+ let calls=0,resolveRequest,lastRequest;
+ const fakeFetch=(url,init)=>{calls++;lastRequest={url,init};return new Promise(resolve=>resolveRequest=resolve)};
+ const c=vm.createContext({$:field,fetch:fakeFetch,AbortController,setTimeout,clearTimeout,renderFleet(){},render(){},syncRemovalDialog(){}});
+ const pure=fs.readFileSync('internal/central/web/app.js','utf8').split('// DOM application.')[0];
+ vm.runInContext(pure+`;let frame={nodes:[]},removingNode=null,removingMode=null;const removals=new Map();globalThis.setNode=n=>{frame.nodes=[n];removingNode=null;removingMode=null;removals.clear();openRemoval(n.id)};globalThis.setStatus=status=>{frame.nodes[0].status=status;syncRemovalDialog()};globalThis.state=()=>({nodes:frame.nodes,local:removals.get(removingNode)});`,c);
+ vm.runInContext(source.slice(source.indexOf('function syncRemovalDialog(){'),source.indexOf('async function submitRemoval(){')),c);
+ vm.runInContext(source.slice(source.indexOf('async function submitRemoval(){'),source.indexOf('function renderFleet(){'))+';globalThis.submit=submitRemoval;',c);
+ c.setNode({...removable,id:'central'});await c.submit();assert.equal(calls,0,'central removal reaches API');
+ c.setNode({...removable});const first=c.submit();await c.submit();assert.equal(calls,1,'in-flight removal submitted twice');
+ assert.equal(lastRequest.url,'/api/nodes/n1/remove');assert.equal(lastRequest.init.credentials,'same-origin');assert.equal(lastRequest.init.headers['X-Marzwatch-Action'],'remove-node');assert.deepEqual(JSON.parse(lastRequest.init.body),{confirm:'n1',mode:'uninstall'});
+ resolveRequest({ok:true,json:async()=>({status:'queued'})});await first;assert.equal(c.state().nodes.length,1,'queued removal hid node before worker confirmation');assert.equal(c.state().local.status,'pending');assert(!field('#removal-notice').textContent.includes('حذف شد'));
+ c.setNode({...removable,status:'offline'});const offlineCopy=field('#remove-description').textContent;c.setStatus('online');assert.equal(field('#remove-confirm').textContent,'فقط حذف از فهرست');assert.equal(field('#remove-description').textContent,offlineCopy,'reconnect changed confirmed scope');const second=c.submit();assert.equal(JSON.parse(lastRequest.init.body).mode,'list-only','reconnect escalated list removal to uninstall');resolveRequest({ok:true,json:async()=>({status:'removed'})});await second;assert.equal(c.state().nodes.length,0);assert.equal(field('#search').focused,true);
+ c.setNode({...removable});c.setStatus('offline');assert.equal(field('#remove-confirm').textContent,'حذف MarzWatch');const rejected=c.submit();assert.equal(JSON.parse(lastRequest.init.body).mode,'uninstall','submit recomputed confirmed mode');resolveRequest({ok:false,json:async()=>({error:'اجازهٔ حذف داده نشد.'})});await rejected;assert.equal(c.state().nodes.length,1);assert.equal(c.state().local.status,'failed');assert.equal(field('#remove-error').hidden,false);assert.equal(field('#remove-error').textContent,'اجازهٔ حذف داده نشد.');
+ console.log('PASS: removal scope, central protection, no nested control, duplicate suppression, authenticated request, queued/removed/error states, reconnect cannot escalate confirmed list-only scope');
+}
+checkRemovalController().catch(error=>{console.error(error);process.exitCode=1});

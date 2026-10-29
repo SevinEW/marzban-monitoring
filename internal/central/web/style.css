@@ -33,3 +33,29 @@
 @media(max-width:640px){.presence-overview{order:3;width:100%;margin:0}.presence-total{width:100%;min-height:72px}.presence-count{font-size:28px}.presence-mini .presence-count{font-size:17px}}
 
 .presence-mini[hidden]{display:none}
+
+/* Node removal stays separate from the card's detail button. */
+.server-shell{position:relative;min-width:0;display:flex;flex-direction:column;animation:card-in .5s both;animation-delay:calc(var(--index,0)*35ms);transition:transform .25s}
+.server-shell>.server-card{flex:1;animation:none;transform:none}
+.server-shell:hover{transform:translateY(-3px)}
+.server-shell.removable .server-top{padding-left:43px}
+.server-shell>.remove-node{position:absolute;top:10px;left:10px;width:44px;height:44px;border-color:transparent;background:transparent;color:var(--muted);border-radius:12px;z-index:1}
+.server-shell>.remove-node:hover{color:var(--red);border-color:var(--border);background:var(--panel)}
+.server-shell>.remove-node:disabled{cursor:wait;opacity:.45;color:var(--muted)}
+.server-shell>.remove-node .icon{width:17px;height:17px}
+.removal-note,.removal-notice{font-size:11px;line-height:1.9;color:var(--amber);border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin:8px 0 0;overflow-wrap:anywhere;background:var(--panel)}
+.removal-note[hidden],.removal-notice[hidden],.remove-error[hidden]{display:none}
+.server-shell[data-removal=failed] .removal-note{color:var(--red)}
+.removal-notice{margin:0 0 16px;color:var(--text)}
+dialog.remove-dialog{width:min(470px,calc(100vw - 28px));border-color:var(--border)}
+.remove-shell{padding:28px}
+.remove-shell h2{font-size:20px;font-weight:750;margin:10px 0 20px}
+.remove-identity{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-block:1px solid var(--border);overflow-wrap:anywhere}
+.remove-identity strong{font-size:16px;min-width:0}.remove-identity bdi{font-size:12px;color:var(--muted)}
+#remove-description{font-size:13px;color:var(--muted);line-height:2;margin:18px 0 12px}
+#remove-scope{font-size:12px;color:var(--text);margin:0 0 20px}
+.remove-error{font-size:12px;line-height:1.9;color:var(--red);overflow-wrap:anywhere}
+.remove-actions{display:flex;gap:10px}.remove-actions button{min-height:44px;padding:9px 16px;border:1px solid var(--border);border-radius:11px;font-weight:650}
+#remove-cancel{background:var(--panel);color:var(--text)}#remove-confirm{margin-right:auto;color:var(--red);border-color:var(--red)}
+.remove-actions button:hover{background:var(--bg)}.remove-actions button:disabled{cursor:wait;opacity:.5}
+@media(max-width:400px){.remove-shell{padding:20px}.remove-identity{align-items:flex-start;flex-direction:column}.remove-actions button{font-size:12px;padding-inline:12px}}

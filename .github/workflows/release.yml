@@ -54,6 +54,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_presence_auto.py
           python3 -m unittest discover -s scripts -p test_presence_core_stage.py
           python3 scripts/test_release_download.py
+          python3 -m unittest discover -s scripts -p test_node_remove.py
           go test -race ./...
           go vet ./...
           bash -n scripts/install.sh

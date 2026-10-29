@@ -348,6 +348,11 @@ backup_existing() {
 
 clean_marzwatch() {
   printf "%b🧹 Dar hale pak sazi faghat MarzWatch...%b\n" "$Y" "$N"
+  local own_unit
+  for own_unit in marzwatch-presence-enroll.timer marzwatch-presence-enroll.service marzwatch-presence-recovery.timer marzwatch-presence-recovery.service marzwatch-pg-meter.service marzwatch-uninstall.service; do
+    systemctl disable --now "$own_unit" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/$own_unit"
+  done
   systemctl disable --now marzwatch-auto-update.timer >/dev/null 2>&1 || true
   systemctl stop marzwatch-auto-update.service >/dev/null 2>&1 || true
   systemctl disable --now marzwatch >/dev/null 2>&1 || true

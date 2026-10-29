@@ -191,6 +191,7 @@ func (a *Agent) sendMetric(m model.Metric) error {
 	req.Header.Set("X-MW-Node", a.id.NodeID)
 	req.Header.Set("X-MW-Time", ts)
 	req.Header.Set("X-MW-Signature", sig)
+ req.Header.Set("X-Marzwatch-Actions","1")
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return err
@@ -202,6 +203,7 @@ func (a *Agent) sendMetric(m model.Metric) error {
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("central returned %s", resp.Status)
 	}
+	a.handleRemoval(resp.Header.Get("X-Marzwatch-Remove"))
 	a.handleFleetUpdate(resp.Header.Get("X-Marzwatch-Fleet-Update"))
 	return nil
 }

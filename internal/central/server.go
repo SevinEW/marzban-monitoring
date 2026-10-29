@@ -40,6 +40,11 @@ type metricAlert struct {
 }
 
 type Server struct {
+ removalMu sync.Mutex
+ removalPath string
+ removals map[string]nodeRemoval
+ removalCap map[string]time.Time
+ revoked map[string]bool
  autoScopeMu sync.Mutex
  autoScopeNext time.Time
  autoScopeIDs map[string]bool
@@ -66,6 +71,7 @@ func Run(cfg config.Config) error {
 		return err
 	}
 	s := &Server{presence:presence.NewRegistry(),cfg: cfg, store: st, bot: telegram.New(cfg.TelegramToken, cfg.AdminChatID), tz: tz, alerts: map[string]*alertTracker{}, stop: make(chan struct{})}
+	if err:=s.initRemovals(nodeRemovalsPath);err!=nil{return err}
 	fp, err := security.EnsureSelfSigned(certPath, keyPath, cfg.PublicIP)
 	if err != nil {
 		return err
@@ -83,6 +89,7 @@ func Run(cfg config.Config) error {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("POST /api/v1/register", s.register)
 	mux.HandleFunc("POST /api/v1/metrics", s.metrics)
+ mux.Handle("POST /api/v1/node-action",concurrencyLimit(http.HandlerFunc(s.removeNodeAction),2))
  mux.Handle("POST /api/v1/release",concurrencyLimit(http.HandlerFunc(s.cachedRelease),2))
  mux.Handle("POST /api/v1/presence-enroll", concurrencyLimit(http.HandlerFunc(s.enrollPresence),2))
  mux.Handle("POST /api/v1/presence", concurrencyLimit(http.HandlerFunc(s.receivePresence),4))
@@ -124,6 +131,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+ s.removalMu.Lock();defer s.removalMu.Unlock()
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Marzwatch-Join")), []byte(s.cfg.JoinToken)) != 1 {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -171,6 +179,8 @@ func (s *Server) autoNodeName(loc model.Location, hostname string) string {
 }
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
+ s.removalMu.Lock();defer s.removalMu.Unlock()
+ if s.removalRevoked(r.Header.Get("X-MW-Node")){http.Error(w,"removed node",410);return}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "bad body", 400)
@@ -206,6 +216,7 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now()
 	}
+	s.removalHeader(id,w,r)
 	updated, _ := s.store.UpdateMetric(id, m, s.tz)
 	s.evaluate(updated)
 	w.WriteHeader(204)

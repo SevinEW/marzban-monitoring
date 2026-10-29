@@ -100,3 +100,17 @@ func TestAutoScopeRejectsInvalidOrOversizedFiles(t *testing.T) {
 		t.Fatal("scope did not deduplicate")
 	}
 }
+
+func TestReplacementScopeDoesNotCountRetiredManualIdentity(t *testing.T) {
+ p:=filepath.Join(t.TempDir(),"scope.json")
+ os.WriteFile(p,[]byte(`{"ids":["new"],"replacements":{"old":"new"}}`),0600)
+ scope:=readAutoPresenceScope(p,time.Now())
+ if scope==nil || scope["old"] || !scope["new"] { t.Fatal(scope) }
+ s:=&Server{cfg:config.Config{PresenceAutoEnroll:true,PresenceNodeIDs:[]string{"old","other"}},autoScopeIDs:scope,autoScopeNext:time.Now().Add(time.Minute)}
+ live:=s.presenceScope(time.Now())
+ if live["old"] || !live["new"] || !live["other"] { t.Fatal(live) }
+ for _,raw:=range []string{`{"ids":["new"],"replacements":{"central":"new"}}`,`{"ids":["new"],"replacements":{"old":"missing"}}`} {
+  os.WriteFile(p,[]byte(raw),0600)
+  if readAutoPresenceScope(p,time.Now())!=nil { t.Fatal("invalid replacement accepted") }
+ }
+}

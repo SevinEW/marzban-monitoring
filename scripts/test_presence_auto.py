@@ -1,4 +1,5 @@
 import copy
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -117,6 +118,29 @@ class AutoEnrollmentTests(unittest.TestCase):
                 if variant == 'missing_inventory':self.reports['m'].pop('inventory')
                 self.run_reconcile(manual=['m'] if variant == 'manual' else [])
                 self.control.assert_not_called();self.assertEqual(self.fleet['nodes'], {})
+
+    def test_reinstalled_monitor_ignores_only_confirmed_inactive_predecessor(self):
+        self.core['config'] = a.online_config(self.core['config'])
+        self.monitors['old'] = copy.deepcopy(self.monitors['m'])
+        self.monitors['old']['last_contact'] = datetime.fromtimestamp(self.now-601,timezone.utc).isoformat()
+        self.reports['old'] = dict(self.reports['m'], received=self.now-601)
+        self.fleet['nodes']['old'] = a.profile_for(self.node,self.core,self.inv,'Mostaghim',self.fleet['auto_enroll'])
+        self.assertEqual(self.run_reconcile(manual=['old']),['m'])
+        self.control.assert_not_called()
+        self.assertEqual(a.replaced_scope(self.fleet,self.monitors,self.reports,self.state,self.snapshot,self.now),{'old':'m'})
+        self.assertIn('old',self.monitors,'predecessor history must not be deleted')
+        for bad in [self.now-600,self.now+1]:
+            self.reports['old']['received']=bad
+            self.assertEqual(a.matched_nodes(self.monitors,self.reports,self.snapshot,self.now),{})
+        self.reports['old']['received']=self.now-601
+        self.monitors['old'].pop('last_contact')
+        self.assertEqual(a.matched_nodes(self.monitors,self.reports,self.snapshot,self.now),{})
+
+    def test_replacement_scope_never_hides_different_panel_assignment(self):
+        self.test_reinstalled_monitor_ignores_only_confirmed_inactive_predecessor()
+        self.monitors['old']['last_contact']=datetime.fromtimestamp(self.now-601,timezone.utc).isoformat()
+        self.fleet['nodes']['old']['node_id']=99
+        self.assertEqual(a.replaced_scope(self.fleet,self.monitors,self.reports,self.state,self.snapshot,self.now),{})
 
     def test_unsupported_core_is_not_restarted(self):
         self.core['config']['inbounds'][0]['streamSettings']['network'] = 'tcp'

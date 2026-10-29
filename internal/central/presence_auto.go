@@ -20,7 +20,8 @@ func readAutoPresenceScope(path string, now time.Time) map[string]bool {
 	defer f.Close()
 	raw, err := io.ReadAll(io.LimitReader(f, 32769))
 	var scope struct {
-		IDs []string `json:"ids"`
+		IDs          []string          `json:"ids"`
+		Replacements map[string]string `json:"replacements"`
 	}
 	if err != nil || len(raw) > 32768 || json.Unmarshal(raw, &scope) != nil || len(scope.IDs) > 100 {
 		return nil
@@ -30,6 +31,15 @@ func readAutoPresenceScope(path string, now time.Time) map[string]bool {
 			return nil
 		}
 		out[id] = true
+	}
+	if len(scope.Replacements) > 100 {
+		return nil
+	}
+	for old, replacement := range scope.Replacements {
+		if old == "central" || old == replacement || !enrollmentID.MatchString(old) || !out[replacement] || out[old] {
+			return nil
+		}
+		out[old] = false
 	}
 	return out
 }
@@ -52,8 +62,8 @@ func (s *Server) presenceScope(now time.Time) map[string]bool {
 	}
 	// Keep known eligible nodes visible during a reconciler outage. Their metric
 	// status becomes unknown/stale instead of silently shrinking the denominator.
-	for id := range s.autoScopeIDs {
-		out[id] = true
+	for id, enabled := range s.autoScopeIDs {
+		out[id] = enabled
 	}
 	return out
 }

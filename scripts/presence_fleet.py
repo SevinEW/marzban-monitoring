@@ -316,7 +316,9 @@ def main():
                 tick(cfg, '--refresh' in sys.argv)
             else:
                 refresh('--refresh' in sys.argv)
-        elif cfg['role'] == 'agent': agent(cfg)
+        elif cfg['role'] == 'agent':
+            from node_remove import maybe_start
+            if not maybe_start(): agent(cfg)
 
 
 if __name__ == '__main__':

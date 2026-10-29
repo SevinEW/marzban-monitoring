@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import time
+from datetime import datetime
 import recover_pasarguard_presence as r
 from presence_panel import online_config
 from presence_source import minimal_source
@@ -15,6 +16,21 @@ SCOPE = Path('/etc/marzwatch/presence-auto-scope.json')
 REPORTS = Path('/var/lib/marzwatch/presence-enrollment')
 MONITORS = Path('/var/lib/marzwatch/state.json')
 ID = re.compile(r'[A-Za-z0-9_-]{1,80}')
+REPLACEMENT_GRACE = 600
+
+
+def retired_monitor(node, report, now):
+    """Only Central-owned contact times can retire a competing installation."""
+    try:
+        stamp = datetime.fromisoformat(node['last_contact'].replace('Z', '+00:00'))
+        if stamp.tzinfo is None:
+            return False
+        received = report['received']
+        return (now-stamp.timestamp() > REPLACEMENT_GRACE
+                and isinstance(received, (int, float))
+                and 0 < received < now-REPLACEMENT_GRACE)
+    except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
+        return False
 
 
 def ipv4(value):
@@ -60,13 +76,37 @@ def matched_nodes(monitors, reports, snapshot, now):
         addresses.discard('')
         matches = [n for n in snapshot['nodes'] if ipv4(n['address']) in addresses]
         same_ip = [m for k, m in monitors.items()
-                   if k != 'central' and ipv4(m.get('location', {}).get('public_ip')) == peer]
+                   if k != 'central' and ipv4(m.get('location', {}).get('public_ip')) == peer
+                   and not retired_monitor(m, reports.get(k, {}), now)]
         if len(matches) == 1 and len(same_ip) == 1:
             found[mid] = matches[0]
     # A moved/shared Floating IP must not bind two physical monitors to one
     # panel node. Keep both unresolved until the address ownership is unique.
     return {mid: n for mid, n in found.items()
             if sum(other['id'] == n['id'] for other in found.values()) == 1}
+
+
+def replaced_scope(fleet, monitors, reports, state, snapshot, now):
+    """Suppress only an inactive predecessor of the same verified panel node.
+
+    Keep records/history intact. A returning predecessor immediately cancels the
+    suppression; IP equality alone never merges identities or authorizes removal.
+    """
+    matched = matched_nodes(monitors, reports, snapshot, now)
+    out = {}
+    for mid, node in matched.items():
+        entry = state.get('nodes', {}).get(mid, {})
+        if entry.get('phase') not in ['verifying', 'verification_pending', 'ready']:
+            continue
+        if entry.get('expected', {}).get('id') != node['id']:
+            continue
+        for old, profile in fleet['nodes'].items():
+            if (old != mid and old in monitors and profile.get('enabled')
+                    and profile.get('node_id') == node['id']
+                    and profile.get('node_address') == node['address']
+                    and retired_monitor(monitors[old], reports.get(old, {}), now)):
+                out[old] = mid
+    return out
 
 
 def source_for(node, core, candidates):
@@ -300,8 +340,10 @@ def tick(cfg, force=False):
     # A failed refresh retains previously matched IDs. Stale data is displayed
     # explicitly instead of silently removing a source from the total.
     old_scope = f.root_json(SCOPE) if SCOPE.exists() else {}
-    if old_scope.get('ids') != scope:
-        r.atomic_json(SCOPE, {'ids': scope}, mode=0o640, gid=grp.getgrnam('marzwatch').gr_gid)
+    replacements = replaced_scope(fleet, monitors, reports, state, cached, now)
+    if old_scope.get('ids') != scope or old_scope.get('replacements', {}) != replacements:
+        r.atomic_json(SCOPE, {'ids': scope, 'replacements': replacements},
+                      mode=0o640, gid=grp.getgrnam('marzwatch').gr_gid)
     if (not force and f.PLANS.exists() and now-f.PLANS.stat().st_mtime < 300
         and before_fleet == r.digest(fleet)):
         return

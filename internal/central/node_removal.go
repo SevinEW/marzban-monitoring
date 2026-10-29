@@ -137,6 +137,8 @@ func (s *Server) removalSnapshot(id string, now time.Time) *removalView {
 }
 func (s *Server) removalHeader(id string, w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-Marzwatch-Actions") == "1" {
+		s.removalCapMu.Lock()
+		defer s.removalCapMu.Unlock()
 		if s.removalCap == nil {
 			s.removalCap = map[string]time.Time{}
 		}

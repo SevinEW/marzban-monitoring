@@ -40,7 +40,8 @@ type metricAlert struct {
 }
 
 type Server struct {
- removalMu sync.Mutex
+ removalMu sync.RWMutex
+ removalCapMu sync.Mutex
  removalPath string
  removals map[string]nodeRemoval
  removalCap map[string]time.Time
@@ -131,7 +132,6 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
- s.removalMu.Lock();defer s.removalMu.Unlock()
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Marzwatch-Join")), []byte(s.cfg.JoinToken)) != 1 {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -145,6 +145,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hostname required", 400)
 		return
 	}
+	s.removalMu.RLock();defer s.removalMu.RUnlock()
 	id, _ := config.RandomToken(12)
 	secret, _ := config.RandomToken(32)
 	name := strings.TrimSpace(q.Name)
@@ -179,8 +180,6 @@ func (s *Server) autoNodeName(loc model.Location, hostname string) string {
 }
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
- s.removalMu.Lock();defer s.removalMu.Unlock()
- if s.removalRevoked(r.Header.Get("X-MW-Node")){http.Error(w,"removed node",410);return}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "bad body", 400)
@@ -189,6 +188,8 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("X-MW-Node")
 	n, ok := s.store.GetNode(id)
 	if !ok {
+  s.removalMu.RLock();removed:=s.removalRevoked(id);s.removalMu.RUnlock()
+  if removed{http.Error(w,"removed node",410);return}
 		http.Error(w, "unknown node", 401)
 		return
 	}
@@ -216,6 +217,8 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now()
 	}
+	s.removalMu.RLock();defer s.removalMu.RUnlock()
+ if s.removalRevoked(id){http.Error(w,"removed node",410);return}
 	s.removalHeader(id,w,r)
 	updated, _ := s.store.UpdateMetric(id, m, s.tz)
 	s.evaluate(updated)

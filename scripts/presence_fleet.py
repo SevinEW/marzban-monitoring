@@ -201,7 +201,7 @@ def agent(cfg):
     try:
         ident = json.loads(IDENTITY.read_text())
         inv = local.get('inventory') if bound else None
-        if not inv:
+        if not inv or not inv.get('parent_start_ticks'):
             inv = inventory(local.get('inventory'))
         inv['addresses'] = local_addresses()
         local['inventory'] = inv

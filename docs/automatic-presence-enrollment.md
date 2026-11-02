@@ -47,6 +47,9 @@ The agent independently verifies Docker parent/process ownership, its local IP,
 the pinned executable and container, and a real existing-account connection.
 Initial runtime hashes come from authenticated local discovery and are pinned
 to that matched node; they are not a global approval of arbitrary executables.
+An errored duplicate panel record does not block a sole connected replacement at
+the same locally attested address. Two live or connecting owners remain ambiguous;
+the old panel record is never changed or deleted by enrollment.
 
 If tracking is already enabled, enrollment makes no panel changes. Otherwise,
 with explicit `allow_initial_restart`, it creates or reuses a separate config
@@ -56,6 +59,11 @@ in flight; it is journaled before the API call and is not repeated after a lost
 response. A failed connection gets one guarded rollback, while a failed runtime
 proof stays unknown and retries without restarting a healthy core. Manual nodes
 and later user changes that disable tracking are never overridden.
+Runtime changes during the first pending proof also refresh the approved plan
+without restarting the VPN. Zombie children from an earlier Xray process are
+ignored when locating the single live core; multiple live cores still fail closed.
+Each agent tick sends at most one enrollment request, including queued failure
+reports, so a transient network error cannot create a permanent rate-limit loop.
 
 Normal discovery refresh uses one bounded read-only transaction every five
 minutes (node metadata, distinct core configs, five candidate account IDs).

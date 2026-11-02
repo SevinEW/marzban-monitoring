@@ -75,6 +75,13 @@ def matched_nodes(monitors, reports, snapshot, now):
             addresses.update(ipv4(v) for v in aliases if isinstance(v, str))
         addresses.discard('')
         matches = [n for n in snapshot['nodes'] if ipv4(n['address']) in addresses]
+        # A removed/recreated panel node may leave an errored row at the same
+        # address. Prefer its sole connected replacement, but do not resolve
+        # competing live/connecting owners or mutate the old row.
+        if len(matches) > 1:
+            live = [n for n in matches if n.get('status') != 'error']
+            if len(live) == 1 and live[0].get('status') == 'connected':
+                matches = live
         same_ip = [m for k, m in monitors.items()
                    if k != 'central' and ipv4(m.get('location', {}).get('public_ip')) == peer
                    and not retired_monitor(m, reports.get(k, {}), now)]
@@ -181,24 +188,25 @@ def reconcile(fleet, snapshot, monitors, reports, state, manual_ids, control, sa
         if mid in manual_ids and mid not in entries:
             refresh_existing_manual(fleet, mid, node, core, report, snapshot['candidates'])
             continue
-        if entry and entry.get('phase') == 'ready':
+        if entry and entry.get('phase') in ['ready', 'verifying', 'verification_pending']:
             profile = fleet['nodes'].get(mid, {})
             same = all(profile.get(k) == report['inventory'].get(k) for k in
                        ['node_container', 'node_image_id', 'xray_sha256'])
             same = same and all(profile.get(k) == value for k, value in
                 [('node_name', node['name']), ('node_address', node['address']),
                  ('node_id', node['id']), ('core_config_id', node['core_id'])])
-            if same:
+            if same and entry['phase'] == 'ready':
                 continue
             # Follow a legitimate runtime/IP change with a new proof, never a
             # second automatic restart or an override of a user-disabled policy.
-            try:
-                already_enabled = online_config(core['config']) == core['config']
-            except (ValueError, TypeError, KeyError):
-                already_enabled = False
-            if node['id'] != entry['expected']['id'] or not already_enabled:
-                entry['phase'] = 'assignment_changed'; fleet['nodes'].pop(mid, None); continue
-            entry.update(phase='rebind', retry_after=0, restart_attempted=False)
+            if not same:
+                try:
+                    already_enabled = online_config(core['config']) == core['config']
+                except (ValueError, TypeError, KeyError):
+                    already_enabled = False
+                if node['id'] != entry['expected']['id'] or not already_enabled:
+                    entry['phase'] = 'assignment_changed'; fleet['nodes'].pop(mid, None); continue
+                entry.update(phase='rebind', retry_after=0, restart_attempted=False)
         if entry and entry.get('phase') in ['verifying', 'verification_pending', 'activating', 'activation_unknown']:
             if node['core_id'] == entry['target_id']:
                 if entry['phase'] in ['activating', 'activation_unknown']:

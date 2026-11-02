@@ -147,6 +147,26 @@ class AutoEnrollmentTests(unittest.TestCase):
         self.run_reconcile();self.control.assert_not_called()
         self.assertEqual(self.state['nodes']['m']['phase'], 'unsupported_or_unavailable')
 
+    def test_errored_duplicate_panel_row_does_not_block_connected_replacement(self):
+        self.core['config']=a.online_config(self.core['config'])
+        old=dict(self.node,id=19,status='error')
+        self.snapshot['nodes'].append(old)
+        self.run_reconcile();self.control.assert_not_called()
+        self.assertEqual(self.fleet['nodes']['m']['node_id'],20)
+        self.assertEqual(old['status'],'error','old panel record must remain untouched')
+        for status in ['connected','connecting','disabled']:
+            old['status']=status
+            self.assertEqual(a.matched_nodes(self.monitors,self.reports,self.snapshot,self.now),{})
+
+    def test_runtime_change_while_initial_proof_pending_gets_fresh_plan_without_restart(self):
+        self.core['config']=a.online_config(self.core['config'])
+        self.run_reconcile()
+        self.inv['xray_sha256']='c'*64
+        self.run_reconcile(now=self.now+30)
+        self.control.assert_not_called()
+        self.assertEqual(self.fleet['nodes']['m']['xray_sha256'],'c'*64)
+        self.assertEqual(self.state['nodes']['m']['phase'],'verifying')
+
     def test_excluded_probe_is_not_activated(self):
         self.core['exclude_inbound_tags'] = ['Mostaghim']
         self.run_reconcile();self.control.assert_not_called()

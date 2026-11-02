@@ -68,6 +68,7 @@ def exchange(cfg, ident, report):
         r.require(len(data) <= 65536, 'plan_too_large')
         if response.status in [204, 403]:
             return None
+        r.require(response.status != 429, 'central_rate_limited')
         r.require(response.status == 200, 'central_unavailable')
         return json.loads(data)
     finally:
@@ -107,6 +108,10 @@ def cached_runtime(cached):
                 proc = r.process(pid)
                 if proc['parent'] == parent['pid']: candidates.append(proc)
             except FileNotFoundError: continue
+            except r.Unverified as e:
+                # A terminated child can remain as a zombie beside the new
+                # live core. It cannot own sockets or be a candidate binding.
+                if str(e) != 'core_stopped': raise
         r.require(len(candidates) == 1, 'ambiguous_running_core')
         proc = candidates[0]
         sha = r.file_digest('/proc/'+str(proc['pid'])+'/exe')
@@ -148,7 +153,8 @@ def retry_delay(reason, failures):
     # failures back off to five minutes. This never authorizes a VPN restart.
     transient = reason.startswith('source_timeout:docker_') or reason in {
         'ambiguous_running_core', 'ambiguous_or_missing_pasarguard_node',
-        'core_changed_during_probe', 'runtime_not_approved', 'node_runtime_changed'}
+        'core_changed_during_probe', 'core_stopped', 'runtime_not_approved',
+        'node_runtime_changed', 'central_rate_limited', 'central_unavailable'}
     return min(300, 30 * (2 ** min(max(failures-1, 0), 4))) if transient else 300
 
 
@@ -187,6 +193,10 @@ def agent(cfg):
             local.pop('needs_report', None)
             local['report_after'] = now+300
             r.atomic_json(LOCAL, local)
+            # One exchange per tick. Continuing into discovery here used to
+            # hit Central's five-second rate limit and requeue the same failure
+            # forever after an initial transient error.
+            return
         except Exception:
             # Status reporting cannot bypass the proof's five-minute backoff.
             return

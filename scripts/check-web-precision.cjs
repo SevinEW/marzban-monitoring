@@ -9,6 +9,19 @@ assert.equal(m.rate(2e9).join(' '),'2 Gbps');assert.equal(m.bytes(1024**3).join(
 const parts=m.segments([{t:0,a:2},{t:1000,a:3},{t:2000,a:null},{t:3000,a:5},{t:9000,a:6}],'a');assert.equal(parts.length,3);assert.equal(parts[0].length,2);assert.equal(parts[1][0].a,5);
 assert.equal(m.rateAxis(2e9).divisor,1e9);assert.equal(m.rateAxis(2e9).unit,'Gbps');assert(m.niceMax(1.81e9)>=1.81e9);
 console.log('PASS: bit-rate units, weighted CPU, capacity ratios, stale exclusion, no-data semantics, gap segmentation, binary volume units, fixed axis units');
+// Rolling byte volumes must not use bit rates, guess a split, or hide missing data.
+vm.runInContext('globalThis.volume={trafficParts,trafficText,trafficSummary,trafficCoverage};',cx);
+const volumeNode={traffic_available:true,complete:true,traffic_rx:1024,traffic_tx:0,traffic:1024,rx:999999,tx:888888};
+assert.equal(cx.volume.trafficText(volumeNode,'rx'),'1 KiB');
+assert.equal(cx.volume.trafficText(volumeNode,'tx'),'0 B');
+assert.equal(cx.volume.trafficText({...volumeNode,complete:false},'total'),'1 KiB *');
+for(const bad of [undefined,null,-1,NaN,Infinity,'1024'])assert.equal(cx.volume.trafficParts({...volumeNode,traffic_rx:bad}),null);
+assert.equal(cx.volume.trafficText({...volumeNode,traffic_available:false},'tx'),'—');
+const volumeTotal=cx.volume.trafficSummary([volumeNode,{...volumeNode,complete:false}, {traffic_available:false}]);
+assert.equal(volumeTotal.traffic,2048);assert.equal(volumeTotal.traffic_rx,2048);assert.equal(volumeTotal.traffic_tx,0);
+assert.equal(volumeTotal.available,2);assert.equal(volumeTotal.covered,1);assert.equal(volumeTotal.complete,false);
+assert.equal(cx.volume.trafficSummary([]).traffic_available,false);assert.equal(cx.volume.trafficSummary([]).complete,false);
+console.log('PASS: rolling direction units, measured zero, missing/invalid directions, partial-window and fleet coverage');
 // Repeated identical SVG markup must not be reassigned after DOM serialization.
 const source=fs.readFileSync('internal/central/web/app.js','utf8');
 const cache=source.slice(source.indexOf('const renderedHTML='),source.indexOf('function compact('));

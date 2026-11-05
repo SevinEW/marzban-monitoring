@@ -13,6 +13,24 @@ func hostTestNode(id string, stamp int64, rx uint64) model.Node {
 	t := time.Unix(stamp, 0)
 	return model.Node{ID: id, LastContact: t, LastSeen: t, Latest: model.Metric{NetworkSource:model.NetworkSource, NetworkBoot:"boot", NetworkReady:true, NetworkCounters:[]model.NetCounter{{Name:"eth0",Index:2,RX:rx,TX:rx/2}}, Timestamp: t, RXBytesTotal: rx, TXBytesTotal: rx / 2, UptimeSeconds: uint64(stamp), RXBps: 1000000000, TXBps: 1000000000}}
 }
+func TestHostBreakdownClipsBothDirectionsInOneWindow(t *testing.T) {
+	p := &hostNode{First: 0, Last: 86430, Buckets: []hostBucket{
+		{Start: 0, End: 60, RX: 600, TX: 120},
+		{Start: 86400, End: 86460, RX: 60, TX: 300},
+		{Start: 86460, End: 86520, RX: 9999, TX: 9999},
+	}}
+	rx, tx, complete := hostBreakdown(p, 86430)
+	if rx != 330 || tx != 210 || !complete {
+		t.Fatalf("wrong clipped directions: rx=%v tx=%v complete=%v", rx, tx, complete)
+	}
+	if total, ok := hostSum(p, 86430); total != rx+tx || ok != complete {
+		t.Fatal("legacy total differs from directional total")
+	}
+	p.Gap = 86400
+	if _, _, ok := hostBreakdown(p, 86430); ok { t.Fatal("gap hidden by directional display") }
+	if rx, tx, ok := hostBreakdown(nil, 86430); rx != 0 || tx != 0 || ok { t.Fatal("missing history reported as complete") }
+}
+
 func TestHostRollingWindowAndPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "host.json")
 	h, err := openHostTraffic(path)

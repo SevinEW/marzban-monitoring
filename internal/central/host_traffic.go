@@ -145,12 +145,11 @@ func (h *hostTraffic) sample(nodes []model.Node, now time.Time) {
 	}
 }
 
-func hostSum(p *hostNode, t float64) (float64, bool) {
+func hostBreakdown(p *hostNode, t float64) (rx, tx float64, complete bool) {
 	if p == nil {
-		return 0, false
+		return 0, 0, false
 	}
 	cut := t - hostWindow
-	total := 0.0
 	for _, b := range p.Buckets {
 		if b.End <= cut || b.Start >= t || b.End <= b.Start {
 			continue
@@ -162,9 +161,16 @@ func hostSum(p *hostNode, t float64) (float64, bool) {
 		if end > t {
 			end = t
 		}
-		total += (b.RX + b.TX) * (end - start) / (b.End - b.Start)
+		share := (end - start) / (b.End - b.Start)
+		rx += b.RX * share
+		tx += b.TX * share
 	}
-	return total, p.First <= cut && p.Gap <= cut && t-p.Last <= 30
+	return rx, tx, p.First <= cut && p.Gap <= cut && t-p.Last <= 30
+}
+
+func hostSum(p *hostNode, t float64) (float64, bool) {
+	rx, tx, complete := hostBreakdown(p, t)
+	return rx + tx, complete
 }
 
 func (h *hostTraffic) value(id string, now time.Time) string {

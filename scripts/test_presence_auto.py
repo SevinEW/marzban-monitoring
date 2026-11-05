@@ -190,9 +190,58 @@ class AutoEnrollmentTests(unittest.TestCase):
         self.control.reset_mock();self.run_reconcile(now=self.now+130)
         self.control.assert_not_called();self.assertEqual(self.state['nodes']['m']['phase'], 'assignment_changed')
 
+    def test_previous_cached_assignment_cannot_cancel_successful_activation(self):
+        cached=copy.deepcopy(self.snapshot)
+        self.run_reconcile()
+        # tick() loads the pre-activation panel cache again until its next read.
+        self.snapshot=cached
+        self.control.reset_mock()
+        self.run_reconcile(now=self.now+30)
+        self.assertEqual(self.state['nodes']['m']['phase'],'verifying')
+        self.assertEqual(self.fleet['nodes']['m']['core_config_id'],7)
+        self.assertTrue(self.state['nodes']['m']['restart_attempted'])
+        self.control.assert_not_called()
+
+    def test_delayed_enabled_assignment_recovers_terminal_state_without_restart(self):
+        self.test_lost_activation_response_never_repeats_put()
+        self.snapshot['cores']['7']=dict(self.core,id=7,config=a.online_config(self.core['config']))
+        self.node['core_id']=7
+        self.run_reconcile(now=self.now+160)
+        self.assertEqual(self.state['nodes']['m']['phase'],'verifying')
+        self.assertEqual(self.fleet['nodes']['m']['core_config_id'],7)
+        self.assertFalse(self.state['nodes']['m']['restart_attempted'])
+        self.control.assert_not_called()
+        self.reports['m'].update(status='ready',received=self.now+170,proof={
+            'pid':self.inv['pid'],'runtime_tracking_verified':True,'verification_method':'native_active_accounts'})
+        self.run_reconcile(now=self.now+180)
+        self.assertEqual(self.state['nodes']['m']['phase'],'ready')
+        self.control.assert_not_called()
+
+    def test_assignment_recovery_preserves_disabled_policy_and_other_node_identity(self):
+        for variant in ['disabled','different_node','disconnected','rolled_back']:
+            with self.subTest(variant=variant):
+                self.setUp();self.test_lost_activation_response_never_repeats_put()
+                if variant!='disabled':
+                    self.snapshot['cores']['7']=dict(self.core,id=7,config=a.online_config(self.core['config']))
+                    self.node['core_id']=7
+                if variant=='different_node':self.node['id']=21
+                if variant=='disconnected':self.node['status']='error'
+                if variant=='rolled_back':self.state['nodes']['m']['phase']='rolled_back'
+                self.run_reconcile(now=self.now+160)
+                self.assertNotIn('m',self.fleet['nodes'])
+                self.control.assert_not_called()
+
+    def test_previous_process_proof_cannot_verify_new_runtime(self):
+        self.core['config']=a.online_config(self.core['config'])
+        self.run_reconcile()
+        self.reports['m'].update(status='ready',received=self.now+10,proof={
+            'pid':self.inv['pid']-1,'runtime_tracking_verified':True,'verification_method':'native_active_accounts'})
+        self.run_reconcile(now=self.now+20)
+        self.assertEqual(self.state['nodes']['m']['phase'],'verifying')
+
     def test_runtime_proof_required_then_repeated_scans_are_inert(self):
         self.run_reconcile()
-        self.reports['m'].update(status='ready', received=self.now+1, proof={'existing_account_flow': True})
+        self.reports['m'].update(status='ready', received=self.now+1, proof={'existing_account_flow': True,'pid':self.inv['pid']})
         self.run_reconcile(now=self.now+30)
         self.assertEqual(self.state['nodes']['m']['phase'], 'verifying')
         self.reports['m']['proof']['tls_verified'] = True

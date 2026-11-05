@@ -64,6 +64,12 @@ without restarting the VPN. Zombie children from an earlier Xray process are
 ignored when locating the single live core; multiple live cores still fail closed.
 Each agent tick sends at most one enrollment request, including queued failure
 reports, so a transient network error cannot create a permanent rate-limit loop.
+After initial activation, the previous cached panel assignment is allowed to
+refresh before being treated as drift. An assignment-changed entry resumes
+verification when the same uniquely matched node is connected with online
+tracking already enabled. This recovery performs no panel mutation or second
+restart, never overrides a disabled policy, and does not resume rolled-back
+entries. A ready proof must identify the same process as the current inventory.
 
 Normal discovery refresh uses one bounded read-only transaction every five
 minutes (node metadata, distinct core configs, five candidate account IDs).

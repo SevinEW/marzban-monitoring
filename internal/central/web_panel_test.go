@@ -19,6 +19,25 @@ func TestWebSnapshotExcludesSecretsAndMarksStale(t *testing.T){
  if len(f.Nodes)!=1||f.Nodes[0].Status!="stale"||f.Nodes[0].RX!=2e9{t.Fatal("freshness or rate units incorrect")}
  f=s.webSnapshot(now.Add(3*time.Minute));if f.Nodes[0].Status!="offline"||f.Nodes[0].RX!=0{t.Fatal("offline rate shown as live")}
 }
+func TestWebSnapshotExposesStoredVolumeDirections(t *testing.T) {
+	st, err := storage.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil { t.Fatal(err) }
+	now := time.Unix(100000, 0)
+	st.UpsertNode(model.Node{ID:"volume", LastSeen:now, Latest:model.Metric{RXBps:999999, TXBps:888888}})
+	st.UpsertNode(model.Node{ID:"missing", LastSeen:now})
+	h := &hostTraffic{data:hostDisk{Version:2, Nodes:map[string]*hostNode{
+		"volume": {First:0, Last:100000, Buckets:[]hostBucket{{Start:99990, End:100000, RX:120, TX:0}}},
+	}}}
+	s := &Server{store:st, host:h}
+	f := s.webSnapshot(now)
+	for _, n := range f.Nodes {
+		if n.ID == "missing" { if n.TrafficAvailable || n.Complete { t.Fatal("missing volume exposed as measured zero") }; continue }
+		if !n.TrafficAvailable || !n.Complete || n.TrafficRX != 120 || n.TrafficTX != 0 || n.Traffic != 120 { t.Fatalf("volume confused with rates: %+v", n) }
+		b, err := json.Marshal(n); if err != nil { t.Fatal(err) }
+		if !strings.Contains(string(b), `"traffic_rx":120`) || !strings.Contains(string(b), `"traffic_tx":0`) { t.Fatal("zero direction omitted from wire format") }
+	}
+}
+
 func TestWebHistoryBoundedAndNotifies(t *testing.T){
  h:=&webHub{};h.publish(webFrame{Time:1});changed:=h.changed
  for i:=2;i<=500;i++{h.publish(webFrame{Time:int64(i)})}

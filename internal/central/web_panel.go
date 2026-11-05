@@ -46,6 +46,8 @@ type webNode struct {
 	Seen             int64   `json:"seen"`
 	Status           string  `json:"status"`
 	Traffic          float64 `json:"traffic"`
+	TrafficRX        float64 `json:"traffic_rx"`
+	TrafficTX        float64 `json:"traffic_tx"`
 	Complete         bool    `json:"complete"`
 	TrafficAvailable bool    `json:"traffic_available"`
 }
@@ -92,7 +94,8 @@ func (s *Server) webSnapshot(now time.Time) webFrame {
 			s.host.mu.Lock()
 			p := s.host.data.Nodes[n.ID]
 			w.TrafficAvailable = p != nil
-			w.Traffic, w.Complete = hostSum(p, float64(now.UnixNano())/1e9)
+			w.TrafficRX, w.TrafficTX, w.Complete = hostBreakdown(p, float64(now.UnixNano())/1e9)
+			w.Traffic = w.TrafficRX + w.TrafficTX
 			s.host.mu.Unlock()
 		}
 		if v,ok:=views[n.ID];ok{w.Presence=v}else{w.Presence=presence.View{Status:"not_applicable"}}

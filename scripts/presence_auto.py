@@ -188,7 +188,15 @@ def reconcile(fleet, snapshot, monitors, reports, state, manual_ids, control, sa
         if mid in manual_ids and mid not in entries:
             refresh_existing_manual(fleet, mid, node, core, report, snapshot['candidates'])
             continue
-        if entry and entry.get('phase') in ['ready', 'verifying', 'verification_pending']:
+        phase = entry.get('phase') if entry else None
+        # A successful activation can precede the next panel-cache refresh.
+        # Let the pending-assignment grace below handle that old snapshot;
+        # treating it as operator drift immediately discards the new plan.
+        refreshable = phase in ['ready', 'assignment_changed'] or (
+            phase in ['verifying', 'verification_pending'] and node['core_id'] == entry['target_id'])
+        if entry and refreshable:
+            if phase == 'assignment_changed' and node['status'] != 'connected':
+                continue
             profile = fleet['nodes'].get(mid, {})
             same = all(profile.get(k) == report['inventory'].get(k) for k in
                        ['node_container', 'node_image_id', 'xray_sha256'])
@@ -199,13 +207,16 @@ def reconcile(fleet, snapshot, monitors, reports, state, manual_ids, control, sa
                 continue
             # Follow a legitimate runtime/IP change with a new proof, never a
             # second automatic restart or an override of a user-disabled policy.
-            if not same:
+            if not same or phase == 'assignment_changed':
                 try:
                     already_enabled = online_config(core['config']) == core['config']
                 except (ValueError, TypeError, KeyError):
                     already_enabled = False
                 if node['id'] != entry['expected']['id'] or not already_enabled:
                     entry['phase'] = 'assignment_changed'; fleet['nodes'].pop(mid, None); continue
+                # Resume only verification of the same connected panel node's
+                # already-enabled policy. Never repeat activation or roll back
+                # the operator's current config after this read-only rebind.
                 entry.update(phase='rebind', retry_after=0, restart_attempted=False)
         if entry and entry.get('phase') in ['verifying', 'verification_pending', 'activating', 'activation_unknown']:
             if node['core_id'] == entry['target_id']:
@@ -213,6 +224,7 @@ def reconcile(fleet, snapshot, monitors, reports, state, manual_ids, control, sa
                     entry['phase'] = 'verifying'
                 proof = report.get('proof', {})
                 if (report.get('status') == 'ready' and report['received'] >= entry['started']
+                    and proof.get('pid') == report['inventory']['pid']
                     and ((proof.get('existing_account_flow') is True and proof.get('tls_verified') is True)
                          or (proof.get('runtime_tracking_verified') is True
                              and proof.get('verification_method') == 'native_active_accounts'))

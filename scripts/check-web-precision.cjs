@@ -13,9 +13,11 @@ console.log('PASS: byte-rate display from bit-rate samples, weighted CPU, capaci
 // Rolling byte volumes must not use bit rates, guess a split, or hide missing data.
 vm.runInContext('globalThis.volume={trafficParts,trafficText,trafficSummary,trafficCoverage};',cx);
 const volumeNode={traffic_available:true,complete:true,traffic_rx:1024,traffic_tx:0,traffic:1024,rx:999999,tx:888888};
-assert.equal(cx.volume.trafficText(volumeNode,'rx'),'1 KiB');
+assert.equal(cx.volume.trafficText(volumeNode,'rx'),'1.02 kB');
 assert.equal(cx.volume.trafficText(volumeNode,'tx'),'0 B');
-assert.equal(cx.volume.trafficText({...volumeNode,complete:false},'total'),'1 KiB *');
+assert.equal(cx.volume.trafficText({...volumeNode,complete:false},'total'),'1.02 kB *');
+assert.equal(cx.volume.trafficText({...volumeNode,traffic_rx:1e12},'rx'),'1 TB');
+assert.equal(cx.volume.trafficText({...volumeNode,traffic_rx:17.83*1024**4},'rx'),'19.6 TB');
 for(const bad of [undefined,null,-1,NaN,Infinity,'1024'])assert.equal(cx.volume.trafficParts({...volumeNode,traffic_rx:bad}),null);
 assert.equal(cx.volume.trafficText({...volumeNode,traffic_available:false},'tx'),'—');
 const volumeTotal=cx.volume.trafficSummary([volumeNode,{...volumeNode,complete:false}, {traffic_available:false}]);

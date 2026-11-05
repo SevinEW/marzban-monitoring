@@ -6,6 +6,7 @@ const escapeHTML=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 function unit(v,base,units){let i=0;v=Math.max(0,Number(v)||0);while(v>=base&&i<units.length-1){v/=base;i++}return[num(v,v>=100?0:2),units[i]]}
 const rate=v=>unit(v/8,1000,['B/s','kB/s','MB/s','GB/s','TB/s']);
 const bytes=v=>unit(v,1024,['B','KiB','MiB','GiB','TiB','PiB']);
+const trafficBytes=v=>unit(v,1000,['B','kB','MB','GB','TB','PB']);
 const label=(v,fn=rate)=>{const[n,u]=fn(v);return `${n} ${u}`};
 const rich=(v,fn=rate)=>{const[n,u]=fn(v);return `<strong>${n}</strong><small>${u}</small>`};
 const percent=(u,t)=>t>0?Math.max(0,Math.min(100,u/t*100)):0;
@@ -33,7 +34,7 @@ function trafficParts(n){
  const parts={rx:n.traffic_rx,tx:n.traffic_tx,total:n.traffic};
  return n.traffic_available&&Object.values(parts).every(v=>Number.isFinite(v)&&v>=0)?parts:null;
 }
-function trafficText(n,key){const p=trafficParts(n);return p?label(p[key],bytes)+(n.complete?'':' *'):'—'}
+function trafficText(n,key){const p=trafficParts(n);return p?label(p[key],trafficBytes)+(n.complete?'':' *'):'—'}
 function trafficCoverage(n){return !trafficParts(n)?'دادهٔ ۲۴ساعته در دسترس نیست':n.complete?'پوشش کامل ۲۴ ساعت':'* بازه ناقص؛ فقط حجم ثبت‌شده'}
 function trafficSummary(nodes){
  const result={traffic_rx:0,traffic_tx:0,traffic:0,available:0,covered:0};

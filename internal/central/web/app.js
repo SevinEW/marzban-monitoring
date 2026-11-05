@@ -1,10 +1,10 @@
 'use strict';
-// Pure telemetry helpers. Rates arrive in bits per second; never multiply them by eight.
+// API/chart samples remain bits per second. Convert once, only for byte-rate display.
 const COLORS={a:'#59e3ff',b:'#ab9aff',c:'#dbe7f7',cpu:'#59e3ff',ram:'#ab9aff',disk:'#ecc588'};
 const num=(v,d=1)=>Number(v||0).toLocaleString('en-US',{maximumFractionDigits:d});
 const escapeHTML=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function unit(v,base,units){let i=0;v=Math.max(0,Number(v)||0);while(v>=base&&i<units.length-1){v/=base;i++}return[num(v,v>=100?0:2),units[i]]}
-const rate=v=>unit(v,1000,['bps','Kbps','Mbps','Gbps','Tbps']);
+const rate=v=>unit(v/8,1000,['B/s','kB/s','MB/s','GB/s','TB/s']);
 const bytes=v=>unit(v,1024,['B','KiB','MiB','GiB','TiB','PiB']);
 const label=(v,fn=rate)=>{const[n,u]=fn(v);return `${n} ${u}`};
 const rich=(v,fn=rate)=>{const[n,u]=fn(v);return `<strong>${n}</strong><small>${u}</small>`};
@@ -19,7 +19,7 @@ const isNetworkFresh=n=>isFresh(n)&&n.network_ready===true;
 function aggregate(nodes){const live=nodes.filter(isFresh),network=live.filter(isNetworkFresh),netSum=k=>network.reduce((s,n)=>s+(Number(n[k])||0),0),sum=k=>live.reduce((s,n)=>s+(Number(n[k])||0),0),cores=sum('cores');return{count:live.length,total:nodes.length,network_count:network.length,a:network.length?netSum('rx'):null,b:network.length?netSum('tx'):null,c:network.length?netSum('rx')+netSum('tx'):null,cpu:cores?live.reduce((s,n)=>s+n.cpu*n.cores,0)/cores:null,ram:sum('ram_total')?percent(sum('ram'),sum('ram_total')):null,disk:sum('disk_total')?percent(sum('disk'),sum('disk_total')):null,cores,ram_used:sum('ram'),ram_total:sum('ram_total'),disk_used:sum('disk'),disk_total:sum('disk_total')}}
 function segments(data,key,maxGap=2500){const out=[];let group=[];for(const p of data){if(p[key]==null||!Number.isFinite(p[key])){if(group.length)out.push(group);group=[];continue}if(group.length&&p.t-group.at(-1).t>maxGap){out.push(group);group=[]}group.push(p)}if(group.length)out.push(group);return out}
 function niceMax(v){if(v<=0)return 1;const step=Math.pow(10,Math.floor(Math.log10(v))),x=v/step;return([1,1.5,2,2.5,3,4,5,6,8,10].find(n=>n>=x)||10)*step}
-function rateAxis(max){const units=['bps','Kbps','Mbps','Gbps','Tbps'];let i=0;while(max>=1000&&i<units.length-1){max/=1000;i++}return{divisor:1000**i,unit:units[i]}}
+function rateAxis(max){const units=['B/s','kB/s','MB/s','GB/s','TB/s'];max/=8;let i=0;while(max>=1000&&i<units.length-1){max/=1000;i++}return{divisor:8*1000**i,unit:units[i]}}
 function compareNodes(a,b,order='traffic'){
  const fallback=()=>(a.code||'ZZ').localeCompare(b.code||'ZZ')||a.name.localeCompare(b.name,undefined,{numeric:true})||a.id.localeCompare(b.id);
  if(order==='country')return fallback();
@@ -166,7 +166,7 @@ class PrecisionChart{
  canvas.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Escape'].includes(e.key))return;e.preventDefault();if(e.key==='Escape'){this.hover=null;this.keyboardTime=null;this.tip.classList.remove('show')}else{const points=this.window();if(!points.length)return;let index=this.keyboardTime===null?points.length-1:Math.max(0,points.findIndex(p=>p.t>=this.keyboardTime));index=Math.max(0,Math.min(points.length-1,index+(e.key==='ArrowLeft'?-1:1)));this.keyboardTime=points[index].t;this.hover=null}this.dirty=true};this.resize()}
  resize(){const r=this.c.getBoundingClientRect(),d=Math.min(2,devicePixelRatio||1);this.w=r.width;this.h=r.height;this.c.width=Math.round(r.width*d);this.c.height=Math.round(r.height*d);this.ctx.setTransform(d,0,0,d,0,0);this.dirty=true}
  window(){const end=this.data.at(-1)?.t||0;return this.data.filter(p=>p.t>=end-range*1000)}
- set(data,pct=this.pct,color=this.color){this.data=data;this.pct=pct;this.color=color;this.updated=performance.now();const keys=pct?['a']:showTotal?['a','b','c']:['a','b'];const peak=Math.max(0,...this.window().flatMap(p=>keys.map(k=>p[k]||0)));this.max=pct?100:niceMax(peak*1.12);this.axis=pct?{divisor:1,unit:'%'}:rateAxis(this.max);this.dirty=true}
+ set(data,pct=this.pct,color=this.color){this.data=data;this.pct=pct;this.color=color;this.updated=performance.now();const keys=pct?['a']:showTotal?['a','b','c']:['a','b'];const peak=Math.max(0,...this.window().flatMap(p=>keys.map(k=>p[k]||0)));this.max=pct?100:niceMax(peak/8*1.12)*8;this.axis=pct?{divisor:1,unit:'%'}:rateAxis(this.max);this.dirty=true}
  draw(now){if(!this.visible||this.w<10||this.h<10||reduced&&!this.dirty)return;this.dirty=false;const ctx=this.ctx,w=this.w,h=this.h,mini=this.mini,L=mini?26:w<450?40:49,R=mini?7:20,T=mini?12:27,B=mini?17:32,pw=w-L-R,ph=h-T-B;if(pw<=0||ph<=0)return;ctx.clearRect(0,0,w,h);ctx.direction='ltr';ctx.font=(mini?'8':'10')+'px Vazirmatn';ctx.textAlign='right';ctx.textBaseline='middle';const max=this.max,axis=this.axis||{divisor:1,unit:'%'},divisions=mini?2:4;
  for(let i=0;i<=divisions;i++){const y=T+ph*i/divisions;ctx.strokeStyle='#32465c4d';ctx.lineWidth=.6;ctx.setLineDash([2,4]);ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-R,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#718da7';ctx.fillText(num(max/axis.divisor*(1-i/divisions),2),L-8,y)}ctx.fillStyle='#91a8be';ctx.font=(mini?'8':'10')+'px Vazirmatn';ctx.textAlign='left';if(!mini)ctx.fillText(axis.unit,L,10);
  const last=this.data.at(-1)?.t;if(!last)return;const drift=connected&&!reduced&&this.keyboardTime===null?Math.min(1000,Math.max(0,now-this.updated)):0,end=last+drift,start=end-range*1000,xy=(p,k)=>[L+(p.t-start)/(range*1000)*pw,T+ph-p[k]/max*ph];this.plot={L,R,pw,start,end};const points=this.data.filter(p=>p.t>=start-3000);const ticks=mini?2:w<450?3:5;ctx.font=(mini?'7':'9')+'px Vazirmatn';ctx.fillStyle='#71869d';ctx.textAlign='center';for(let i=0;i<ticks;i++){const t=start+(end-start)*i/(ticks-1),x=L+pw*i/(ticks-1);ctx.fillText(timeLabel(t),x,h-(mini?5:10));if(!mini){ctx.strokeStyle='#32465c25';ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke()}}

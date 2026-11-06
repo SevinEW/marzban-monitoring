@@ -1,6 +1,7 @@
 package central
 
 import (
+ "math"
 	"github.com/SevinEW/marzban-monitoring/internal/model"
 	"path/filepath"
 "os"
@@ -114,4 +115,40 @@ func TestHostTopologyChangesDoNotImportLifetimeOrMaskReset(t *testing.T) {
  c:=hostTestNode("n",100010,3000);c.Latest.NetworkCounters=append(c.Latest.NetworkCounters,model.NetCounter{Name:"eth1",Index:3,RX:10})
  h.sample([]model.Node{c},c.LastContact)
  total,_=hostSum(h.data.Nodes["n"],100010);if total!=0{t.Fatal("reset hidden",total)}
+}
+
+func TestHostCheckpointResumePreservesProvenVolume(t *testing.T) {
+ for _, tc := range []struct{name string; delay int64; reset, reboot, topology, partial bool; wantGap bool}{
+  {name:"checkpoint lag",delay:35},
+  {name:"bounded checkpoint lag",delay:60},
+  {name:"long outage",delay:61,wantGap:true},
+  {name:"counter reset",delay:35,reset:true,wantGap:true},
+  {name:"reboot",delay:35,reboot:true,wantGap:true},
+  {name:"interface changed",delay:35,topology:true,wantGap:true},
+  {name:"existing gap retained",delay:35,partial:true},
+ } { t.Run(tc.name,func(t *testing.T){
+  path:=filepath.Join(t.TempDir(),"host.json");h,err:=openHostTraffic(path);if err!=nil{t.Fatal(err)}
+  n:=hostTestNode("n",100000,1000);h.sample([]model.Node{n},n.LastContact)
+  h.data.Nodes["n"].First=0;h.data.Nodes["n"].Gap=0
+  if tc.partial {h.data.Nodes["n"].Gap=99990}
+  priorGap:=h.data.Nodes["n"].Gap
+  if err=h.save();err!=nil{t.Fatal(err)}
+  h,err=openHostTraffic(path);if err!=nil{t.Fatal(err)}
+  // A cached duplicate frame must not consume the one-time resume allowance.
+  h.sample([]model.Node{n},time.Unix(100001,0))
+  next:=hostTestNode("n",100000+tc.delay,3000)
+  if tc.reset {next.Latest.NetworkCounters[0].RX=10}
+  if tc.reboot {next.Latest.NetworkBoot="new-boot"}
+  if tc.topology {next.Latest.NetworkCounters[0].Index++}
+  h.sample([]model.Node{next},next.LastContact)
+  p:=h.data.Nodes["n"];expectedGap:=priorGap;if tc.wantGap{expectedGap=float64(100000+tc.delay)}
+  if p.Gap!=expectedGap {t.Fatalf("gap=%v want=%v",p.Gap,expectedGap)}
+  rx,tx,complete:=hostBreakdown(p,float64(100000+tc.delay))
+  if complete!=( !tc.wantGap && !tc.partial ){t.Fatalf("complete=%v",complete)}
+  if tc.reset||tc.reboot||tc.topology {if rx!=0||tx!=0{t.Fatal("invalid baseline imported",rx,tx)}} else if math.Abs(rx-2000)>1e-6||math.Abs(tx-1000)>1e-6 {t.Fatal("checkpoint delta lost or duplicated",rx,tx)}
+  if h.resume["n"] {t.Fatal("resume allowance was not consumed")}
+  later:=hostTestNode("n",100000+tc.delay+35,4000)
+  h.sample([]model.Node{later},later.LastContact)
+  if p.Gap!=float64(later.LastContact.Unix()) {t.Fatal("ordinary sampling gap hidden by restart grace")}
+ }) }
 }

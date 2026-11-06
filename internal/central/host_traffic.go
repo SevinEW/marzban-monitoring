@@ -36,6 +36,7 @@ type hostTraffic struct {
 	mu   sync.Mutex
 	path string
 	data hostDisk
+	resume map[string]bool
 }
 
 func openHostTraffic(path string) (*hostTraffic, error) {
@@ -66,6 +67,11 @@ func openHostTraffic(path string) (*hostTraffic, error) {
  if h.data.Version != 2 || h.data.Nodes == nil {
 		return nil, fmt.Errorf("invalid host traffic history")
 	}
+	// A persisted checkpoint may lag the process by 30s. On the first fresh
+	// sample only, allow that lag plus the normal 30s freshness bound. The
+	// same boot/interfaces and monotonic counters still have to prove every byte.
+	h.resume = make(map[string]bool, len(h.data.Nodes))
+	for id := range h.data.Nodes { h.resume[id] = true }
 	return h, nil
 }
 
@@ -90,12 +96,14 @@ func (h *hostTraffic) sample(nodes []model.Node, now time.Time) {
 		if !m.Timestamp.After(p.Metric) || t <= p.Last {
 			continue
 		}
+		resuming := h.resume[n.ID]
+		delete(h.resume, n.ID)
 		rxDelta, txDelta, valid := model.NetworkDelta(p.Counters, m.NetworkCounters)
   reset := !valid || m.NetworkBoot != p.Boot || m.UptimeSeconds < p.Uptime
 		if reset {
 			p.Gap = t
 		} else {
-			if t-p.Last > 30 {
+			if t-p.Last > 30 && !(resuming && t-p.Last <= 60) {
 				p.Gap = t
 			}
 			rx, tx := float64(rxDelta), float64(txDelta)
@@ -133,6 +141,7 @@ func (h *hostTraffic) sample(nodes []model.Node, now time.Time) {
 	for id, p := range h.data.Nodes {
 		if t-p.Last > hostWindow+3600 {
 			delete(h.data.Nodes, id)
+			delete(h.resume, id)
 			continue
 		}
 		i := 0

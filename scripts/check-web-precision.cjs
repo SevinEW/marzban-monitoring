@@ -5,11 +5,11 @@ const fresh=(v={})=>({status:'online',network_ready:true,cpu:50,cores:4,rx:2e9,t
 const result=m.aggregate([fresh(),fresh({cpu:100,cores:1,rx:1e9,tx:0}),fresh({status:'stale',rx:9e9}),fresh({status:'offline',rx:99e9})]);
 assert.equal(result.a,3e9);assert.equal(result.c,4e9);assert.equal(result.cpu,60);assert.equal(result.count,2);assert.equal(result.total,4);assert.equal(result.ram,25);
 assert.equal(m.aggregate([fresh({status:'offline'})]).a,null);assert.equal(m.aggregate([fresh({cores:0})]).cpu,null);
-assert.equal(m.rate(2e9).join(' '),'250 MB/s');assert.equal(m.bytes(1024**3).join(' '),'1 GiB');
-for(const [bits,text] of [[0,'0 B/s'],[8,'1 B/s'],[8000,'1 kB/s'],[8e6,'1 MB/s'],[8e9,'1 GB/s']])assert.equal(m.rate(bits).join(' '),text);
+assert.equal(m.rate(2e9).join(' '),'2,000 Mbps');assert.equal(m.bytes(1024**3).join(' '),'1 GiB');
+for(const [bits,text] of [[0,'0 Mbps'],[10000,'0.01 Mbps'],[1e6,'1 Mbps'],[8e6,'8 Mbps'],[8e9,'8,000 Mbps']])assert.equal(m.rate(bits).join(' '),text);
 const parts=m.segments([{t:0,a:2},{t:1000,a:3},{t:2000,a:null},{t:3000,a:5},{t:9000,a:6}],'a');assert.equal(parts.length,3);assert.equal(parts[0].length,2);assert.equal(parts[1][0].a,5);
-assert.equal(m.rateAxis(2e9).divisor,8e6);assert.equal(m.rateAxis(2e9).unit,'MB/s');assert.equal(2e9/m.rateAxis(2e9).divisor,250);assert.equal(m.rateAxis(8e9).unit,'GB/s');assert(m.niceMax(1.81e9)>=1.81e9);
-console.log('PASS: byte-rate display from bit-rate samples, weighted CPU, capacity ratios, stale exclusion, no-data semantics, gap segmentation, binary byte volumes, matching axis units');
+assert.equal(m.rateAxis(2e9).divisor,1e6);assert.equal(m.rateAxis(2e9).unit,'Mbps');assert.equal(2e9/m.rateAxis(2e9).divisor,2000);assert.equal(m.rateAxis(8e9).unit,'Mbps');assert(m.niceMax(1.81e9)>=1.81e9);
+console.log('PASS: Mbps display from bit-rate samples, weighted CPU, capacity ratios, stale exclusion, no-data semantics, gap segmentation, binary byte volumes, matching axis units');
 // Rolling byte volumes must not use bit rates, guess a split, or hide missing data.
 vm.runInContext('globalThis.volume={trafficParts,trafficText,trafficSummary,trafficCoverage};',cx);
 const volumeNode={traffic_available:true,complete:true,traffic_rx:1024,traffic_tx:0,traffic:1024,rx:999999,tx:888888};

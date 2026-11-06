@@ -14,6 +14,9 @@ from presence_panel import equivalent_core
 
 
 class AutoEnrollmentTests(unittest.TestCase):
+    def test_traffic_bindings_use_current_verified_identities(self):
+        fleet={'nodes':{'current':{'node_id':20,'enabled':True},'old':{'node_id':20,'enabled':True},'gone':{'node_id':21,'enabled':True},'disabled':{'node_id':22,'enabled':False}}}
+        self.assertEqual(a.traffic_bindings(fleet,{'current':{},'old':{},'disabled':{}},{'old':'current'}),{'current':'20'})
     def setUp(self):
         self.now = 10000
         self.node = {'id': 20, 'name': 'new', 'address': '192.0.2.20', 'status': 'connected', 'core_id': 1}

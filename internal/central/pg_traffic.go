@@ -19,6 +19,8 @@ type pgUsage struct {
 	TXBps    float64 `json:"tx_bps"`
 	Last     float64 `json:"last"`
 	Complete bool    `json:"complete"`
+	Since    float64 `json:"since"`
+	Reason   string  `json:"reason"`
 }
 type pgSnapshot struct {
 	Schema    int                `json:"schema"`

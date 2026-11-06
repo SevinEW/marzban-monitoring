@@ -15,7 +15,7 @@ vm.runInContext('globalThis.volume={trafficParts,trafficText,trafficSummary,traf
 const volumeNode={traffic_available:true,complete:true,traffic_rx:1024,traffic_tx:0,traffic:1024,rx:999999,tx:888888};
 assert.equal(cx.volume.trafficText(volumeNode,'rx'),'1.02 kB');
 assert.equal(cx.volume.trafficText(volumeNode,'tx'),'0 B');
-assert.equal(cx.volume.trafficText({...volumeNode,complete:false},'total'),'1.02 kB *');
+assert.equal(cx.volume.trafficText({...volumeNode,complete:false},'total'),'1.02 kB');
 assert.equal(cx.volume.trafficText({...volumeNode,traffic_rx:1e12},'rx'),'1 TB');
 assert.equal(cx.volume.trafficText({...volumeNode,traffic_rx:17.83*1024**4},'rx'),'19.6 TB');
 for(const bad of [undefined,null,-1,NaN,Infinity,'1024'])assert.equal(cx.volume.trafficParts({...volumeNode,traffic_rx:bad}),null);
@@ -128,3 +128,12 @@ async function checkRemovalController(){
  console.log('PASS: removal scope, central protection, no nested control, duplicate suppression, authenticated request, queued/removed/error states, reconnect cannot escalate confirmed list-only scope');
 }
 checkRemovalController().catch(error=>{console.error(error);process.exitCode=1});
+
+// The VPN summary counts each verified panel identity once and excludes host-only cards.
+const vpnNode={...volumeNode,traffic_source:'vpn',traffic_id:'one',traffic_status:'warming_up',traffic_since:200000,complete:false};
+const vpnSummary=cx.volume.trafficSummary([vpnNode,{...vpnNode,id:'alias'},{traffic_status:'not_applicable'}]);
+assert.equal(vpnSummary.expected,1);assert.equal(vpnSummary.available,1);assert.equal(vpnSummary.traffic,1024);assert.equal(vpnSummary.complete,false);
+assert(cx.volume.trafficCoverage(vpnNode,203600).includes('1 ساعت'));
+assert(!cx.volume.trafficText(vpnNode,'total').includes('*'));
+assert(cx.volume.trafficCoverage({...vpnNode,traffic_status:'stale'},203600).includes('متوقف'));
+console.log('PASS: VPN identity deduplication, host-only exclusion and explicit measured coverage without unexplained asterisks');

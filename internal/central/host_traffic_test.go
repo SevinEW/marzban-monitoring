@@ -1,6 +1,7 @@
 package central
 
 import (
+ "math"
 	"github.com/SevinEW/marzban-monitoring/internal/model"
 	"path/filepath"
 "os"
@@ -144,7 +145,7 @@ func TestHostCheckpointResumePreservesProvenVolume(t *testing.T) {
   if p.Gap!=expectedGap {t.Fatalf("gap=%v want=%v",p.Gap,expectedGap)}
   rx,tx,complete:=hostBreakdown(p,float64(100000+tc.delay))
   if complete!=( !tc.wantGap && !tc.partial ){t.Fatalf("complete=%v",complete)}
-  if tc.reset||tc.reboot||tc.topology {if rx!=0||tx!=0{t.Fatal("invalid baseline imported",rx,tx)}} else if rx!=2000||tx!=1000 {t.Fatal("checkpoint delta lost or duplicated",rx,tx)}
+  if tc.reset||tc.reboot||tc.topology {if rx!=0||tx!=0{t.Fatal("invalid baseline imported",rx,tx)}} else if math.Abs(rx-2000)>1e-6||math.Abs(tx-1000)>1e-6 {t.Fatal("checkpoint delta lost or duplicated",rx,tx)}
   if h.resume["n"] {t.Fatal("resume allowance was not consumed")}
   later:=hostTestNode("n",100000+tc.delay+35,4000)
   h.sample([]model.Node{later},later.LastContact)

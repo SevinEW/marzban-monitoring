@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 spec=importlib.util.spec_from_file_location('meter',Path(__file__).with_name('pg_meter.py'))
 meter=importlib.util.module_from_spec(spec);spec.loader.exec_module(meter)
 
@@ -53,5 +54,18 @@ class LedgerTest(unittest.TestCase):
   self.assertFalse(snap['nodes']['1']['active'])
   self.l.commit(200000)
   self.assertEqual(meter.snapshot(self.l,{},200000)['nodes'],{})
+ def test_short_resume_keeps_counter_proven_bytes_and_coverage(self):
+  self.l.sample(1,200000,{'a|downlink':100,'a|uplink':50},100000)
+  self.l.db.execute('UPDATE nodes SET first=100000,gap=100000 WHERE id=1')
+  self.l.sample(1,200035,{'a|downlink':300,'a|uplink':150},100035)
+  v=self.l.totals(200035)['1'];self.assertTrue(v['complete']);self.assertEqual((v['rx'],v['tx']),(200,100))
+ def test_only_complete_client_inbound_counters_are_accepted(self):
+  config={'inbounds':[{'tag':'vpn','protocol':'vless'},{'tag':'api','protocol':'dokodemo-door'}]}
+  tags=meter.accounting_tags(config);self.assertEqual(tags,{'vpn'})
+  rows=[SimpleNamespace(name='vpn',type=d,value=v) for d,v in [('uplink',100),('downlink',200)]]
+  self.assertEqual(sum(meter.validated_counters(rows,tags).values()),300)
+  with self.assertRaises(ValueError):meter.validated_counters(rows[:1],tags)
+  with self.assertRaises(ValueError):meter.validated_counters(rows+rows[:1],tags)
+  self.assertEqual(sum(meter.validated_counters(rows+[SimpleNamespace(name='api',type='uplink',value=99999)],tags).values()),300)
 
 if __name__=='__main__':unittest.main()

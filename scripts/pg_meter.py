@@ -32,13 +32,15 @@ class Ledger:
         ''')
         if 'uptime' not in {r[1] for r in self.db.execute('PRAGMA table_info(nodes)')}:
             self.db.execute('ALTER TABLE nodes ADD COLUMN uptime REAL')
+        if 'reason' not in {r[1] for r in self.db.execute('PRAGMA table_info(nodes)')}:
+            self.db.execute("ALTER TABLE nodes ADD COLUMN reason TEXT DEFAULT 'warming_up'")
 
     def sample(self, node, stamp, counters, uptime=None):
-        old = self.db.execute('SELECT first,last,counters,gap,uptime FROM nodes WHERE id=?',(node,)).fetchone()
+        old = self.db.execute('SELECT first,last,counters,gap,uptime,reason FROM nodes WHERE id=?',(node,)).fetchone()
         if old is None:
-            self.db.execute('INSERT INTO nodes VALUES(?,?,?,?,?,?)',(node,stamp,stamp,json.dumps(counters),stamp,uptime))
+            self.db.execute('INSERT INTO nodes(id,first,last,counters,gap,uptime,reason) VALUES(?,?,?,?,?,?,?)',(node,stamp,stamp,json.dumps(counters),stamp,uptime,'warming_up'))
             return
-        first,last,raw,gap,previous_uptime = old
+        first,last,raw,gap,previous_uptime,reason = old
         if stamp <= last:
             return
         prev = json.loads(raw)
@@ -48,23 +50,26 @@ class Ledger:
         reset = uptime is not None and previous_uptime is not None and (
             uptime < previous_uptime or abs((stamp-last)-(uptime-previous_uptime)) > 5)
         if reset:
-            gap = stamp
+            gap,reason = stamp,'core_restarted'
         # Disappearing/new counters and resets are explicitly incomplete, not
         # synthetic zero usage or the lifetime total of a newly discovered tag.
         if prev.keys() != counters.keys():
-            gap = stamp
+            gap,reason = stamp,'tags_changed'
         for key,value in counters.items():
             if reset or key not in prev:
                 continue
             delta = value-prev[key]
             if delta < 0:
-                gap = stamp
+                gap,reason = stamp,'counter_reset'
                 continue
             if key.endswith('|downlink'): rx += delta
             elif key.endswith('|uplink'): tx += delta
-        if stamp-last > INTERVAL*3: gap = stamp
+        # A short checkpoint/retry delay preserves every byte when the same
+        # core and monotonic counters prove continuity. Longer gaps remain
+        # explicit because the rolling-window boundary cannot be localized.
+        if stamp-last > 60 and not reset: gap,reason = stamp,'sampling_gap'
         self.db.execute('INSERT INTO intervals VALUES(?,?,?,?,?)',(node,last,stamp,rx,tx))
-        self.db.execute('UPDATE nodes SET last=?,counters=?,gap=?,uptime=? WHERE id=?',(stamp,json.dumps(counters),gap,uptime,node))
+        self.db.execute('UPDATE nodes SET last=?,counters=?,gap=?,uptime=?,reason=? WHERE id=?',(stamp,json.dumps(counters),gap,uptime,reason,node))
 
     def totals(self, now):
         cutoff = now-WINDOW
@@ -76,7 +81,7 @@ class Ledger:
             share = max(0,min(1,(end-cutoff)/(end-start)))
             row = totals.setdefault(node,[0,0]);row[0]+=int(rx*share);row[1]+=int(tx*share)
         out={}
-        for node,first,last,gap in self.db.execute('SELECT id,first,last,gap FROM nodes'):
+        for node,first,last,gap,reason in self.db.execute('SELECT id,first,last,gap,reason FROM nodes'):
             recent=self.db.execute('SELECT start,end,rx,tx FROM intervals WHERE node=? ORDER BY end DESC LIMIT 1',(node,)).fetchone()
             rxps=txps=0
             if recent and now-last<=35:
@@ -85,7 +90,7 @@ class Ledger:
             rx,tx=totals.get(node,(0,0))
             out[str(node)]={'rx':rx,'tx':tx,'rx_bps':rxps,'tx_bps':txps,'last':last,
                             'complete':first<=cutoff and gap<=cutoff,'since':max(first,gap),
-                            'as_of':now}
+                            'reason':reason,'as_of':now}
         return out
 
     def commit(self, now):
@@ -126,7 +131,7 @@ async def run():
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     (ROOT/'meter.pid').write_text(str(os.getpid()))
     os.nice(10)
-    ledger=Ledger(ROOT/'traffic.sqlite')
+    ledger=Ledger(ROOT/'traffic-vpn-v2.sqlite')
     # Importing app.db initializes the entire panel application. Use one
     # bounded SQL connection and fetch only the small node/core inventory.
     url=os.environ['SQLALCHEMY_DATABASE_URL']
@@ -148,10 +153,12 @@ async def run():
                 async with asyncio.timeout(8):
                     db=await asyncpg.connect(url,timeout=4,command_timeout=4,statement_cache_size=0)
                     try:
-                        nodes=await db.fetch('''SELECT n.id,n.name,n.address,n.port,n.api_port,
-                        n.server_ca,n.api_key,n.connection_type,n.proxy_url,c.config
-                        FROM nodes n JOIN core_configs c ON c.id=n.core_config_id
-                        WHERE c.type='xray' AND n.status<>'disabled' ''')
+                        async with db.transaction(readonly=True):
+                            nodes=await db.fetch('''SELECT n.id,n.name,n.address,n.port,n.api_port,
+                            n.server_ca,n.api_key,n.connection_type,n.proxy_url,c.config
+                            FROM nodes n JOIN core_configs c ON c.id=n.core_config_id
+                            WHERE c.type='xray' AND n.status<>'disabled' LIMIT 101''')
+                            if len(nodes)>100:raise ValueError('inventory limit')
                     finally:
                         await db.close()
                     fresh={};meta={}
@@ -165,7 +172,7 @@ async def run():
                             client=create_node(connection=NodeType.grpc if n.connection_type=='grpc' else NodeType.rest,
                                 address=n.address,port=n.port,api_port=n.api_port,server_ca=n.server_ca,api_key=n.api_key,
                                 name='traffic-meter',default_timeout=4,internal_timeout=4,proxy=n.proxy_url)
-                        tags={i['tag'] for i in config.get('inbounds',[]) if 'tag' in i}
+                        tags=accounting_tags(config)
                         fresh[n.id]=(key,client,tags)
                         meta[str(n.id)]={'name':n.name,'address':n.address}
                     retired=[entry[1] for ident,entry in clients.items()
@@ -186,15 +193,7 @@ async def run():
                 try:
                     response=await asyncio.wait_for(entry[1].get_stats(stat_type=StatType.Inbounds,reset=False,timeout=4),5)
                     backend=await asyncio.wait_for(entry[1].get_backend_stats(timeout=4),5)
-                    counters={}
-                    for stat in response.stats:
-                        if stat.name in entry[2] and stat.type in ('uplink','downlink'):
-                            value=int(stat.value)
-                            if value<0:raise ValueError('negative counter')
-                            key=stat.name+'|'+stat.type
-                            if key in counters:raise ValueError('duplicate counter')
-                            counters[key]=value
-                    if not counters:raise ValueError('inbound counters unavailable')
+                    counters=validated_counters(response.stats,entry[2])
                     ledger.sample(node,time.time(),counters,backend.uptime);retry[node]=(0,0)
                 except Exception as e:
                     failures+=1;retry[node]=(failures,time.time()+min(60,INTERVAL*2**min(failures-1,3)))
@@ -203,6 +202,26 @@ async def run():
         now=time.time();ledger.commit(now)
         publish(snapshot(ledger,metadata,now))
         await asyncio.sleep(max(1,INTERVAL-(time.monotonic()-started)))
+
+
+def accounting_tags(config):
+    # Only client-facing proxy inbounds. Exclude internal API/redirect traffic.
+    protocols={'vless','vmess','trojan','shadowsocks','socks','http'}
+    tags=[i['tag'] for i in config.get('inbounds',[]) if i.get('protocol') in protocols and i.get('tag')]
+    if len(tags)!=len(set(tags)):raise ValueError('duplicate inbound tags')
+    return set(tags)
+
+
+def validated_counters(stats,tags):
+    if not tags:raise ValueError('no supported inbounds')
+    counters={}
+    for stat in stats:
+        if stat.name in tags and stat.type in ('uplink','downlink'):
+            value=int(stat.value);key=stat.name+'|'+stat.type
+            if value<0 or key in counters:raise ValueError('invalid counter')
+            counters[key]=value
+    if len(counters)!=2*len(tags):raise ValueError('incomplete inbound counters')
+    return counters
 
 
 def stop():

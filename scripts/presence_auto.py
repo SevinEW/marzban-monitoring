@@ -116,6 +116,13 @@ def replaced_scope(fleet, monitors, reports, state, snapshot, now):
     return out
 
 
+def traffic_bindings(fleet, monitors, replacements):
+    """Publish only stable, verified identities; never infer them from names/IPs."""
+    return {mid: str(p['node_id']) for mid,p in fleet['nodes'].items()
+            if mid in monitors and mid not in replacements and p.get('enabled')
+            and isinstance(p.get('node_id'),int) and p['node_id']>0}
+
+
 def source_for(node, core, candidates):
     return {'name': node['name'], 'address': node['address'], 'core_id': core['id'],
             'config': core['config'], 'candidates': candidates}
@@ -361,8 +368,9 @@ def tick(cfg, force=False):
     # explicitly instead of silently removing a source from the total.
     old_scope = f.root_json(SCOPE) if SCOPE.exists() else {}
     replacements = replaced_scope(fleet, monitors, reports, state, cached, now)
-    if old_scope.get('ids') != scope or old_scope.get('replacements', {}) != replacements:
-        r.atomic_json(SCOPE, {'ids': scope, 'replacements': replacements},
+    bindings = traffic_bindings(fleet, monitors, replacements)
+    if old_scope.get('ids') != scope or old_scope.get('replacements', {}) != replacements or old_scope.get('traffic_nodes', {}) != bindings:
+        r.atomic_json(SCOPE, {'ids': scope, 'replacements': replacements, 'traffic_nodes': bindings},
                       mode=0o640, gid=grp.getgrnam('marzwatch').gr_gid)
     if (not force and f.PLANS.exists() and now-f.PLANS.stat().st_mtime < 300
         and before_fleet == r.digest(fleet)):

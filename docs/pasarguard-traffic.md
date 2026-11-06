@@ -7,6 +7,30 @@ RAM, disk and health remain host metrics; `PG NETWORK` is proxy traffic.
 
 ## Accounting and accuracy
 
+### Web dashboard (independent VPN mode)
+
+Central can enable `pasarguard_traffic` while retaining `host_traffic` collection.
+The web dashboard then uses only independently read client-facing Xray inbound
+bytes for rolling volume, while live network speeds remain physical NIC Mbps.
+The meter never reads PasarGuard user-usage totals and never resets counters.
+Only the small node/core inventory is queried once per minute, read-only.
+Both counter directions for every configured supported inbound must be present.
+
+Current verified monitor-to-panel identities are exported by presence enrollment
+in `presence-auto-scope.json` as `traffic_nodes`; Central's explicit binding stays
+in `pasarguard_nodes`. Floating-IP changes retain the stable verified identity.
+Unmapped VPN nodes remain unavailable; host-only cards do not enter the VPN
+summary. Summary aliases share one panel identity and are counted once. The web
+summary covers the current monitored fleet, not previously removed cards.
+
+The independent web ledger is `traffic-vpn-v2.sqlite`; older ledgers are retained
+but are not imported as new 24-hour history. Initial values are measured since
+activation, with elapsed continuous coverage shown explicitly. No unexplained
+asterisk or guessed half of NIC traffic is used. After 24 hours of valid history
+the label switches automatically to the full rolling window. Real core resets,
+counter changes and long gaps remain explicit; absent history cannot be backfilled
+from interface totals or silently borrowed from the PasarGuard database.
+
 * Read configured inbound tags using `StatType.Inbounds` with `reset=False`.
   Internal API traffic is excluded. No users, packets or logs are collected.
 * Never consume/reset the user or outbound counters used by PasarGuard.
